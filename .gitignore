@@ -1,6 +1,23 @@
 # Local secrets
+.env
+.env.*
+!.env.example
 .env.local
 .env.*.local
 
 # macOS metadata
 .DS_Store
+
+# Dependencies and Next.js output
+node_modules/
+.next/
+out/
+
+# Vercel project metadata
+.vercel/
+
+# Logs and tooling
+*.log
+*.tsbuildinfo
+coverage/
+.typescript/

@@ -185,10 +185,10 @@ does not match the schema.
    Browsers add transport-managed headers that application JavaScript cannot
    suppress. The implementation can ensure it adds only Kyron-returned headers;
    Kyron/storage must accept normal browser-managed headers.
-4. **AI-generated form content is underspecified.** No provider, model, input
-   contract, prompt behavior, or output schema is defined. The core form will
-   support manual entry first. The optional AI route should be implemented only
-   after the team chooses the provider and desired generation behavior.
+4. **AI-generated form content is underspecified and deferred.** No provider,
+   model, input contract, prompt behavior, or output schema is defined. The
+   initial build will support manual entry only. AI assistance is outside the
+   initial implementation and requires a separate future decision.
 5. **String limits are absent.** OpenAPI specifies no minimum or maximum lengths
    for the text fields. Apply sensible application limits for usability and
    request protection, but confirm them through Kyron integration testing rather
@@ -201,8 +201,7 @@ does not match the schema.
    direct upload, request a fresh signed target rather than assuming a URL can
    be reused. Confirm expiry and reuse behavior during integration testing.
 
-None of these gaps blocks scaffolding or the manual-entry draft workflow. The AI
-feature does require a later product decision.
+None of these gaps blocks scaffolding or the manual-entry draft workflow.
 
 ## 4. Proposed application architecture
 
@@ -403,9 +402,10 @@ contents, or user-entered course content by default.
    successful upload.
 9. Discard the signed URL and headers from UI state as soon as upload finishes.
 
-Initial upload progress can be indeterminate if implemented with `fetch`.
-If percentage progress is a requirement, isolate an `XMLHttpRequest` uploader
-behind the same helper; this does not affect the server contract.
+Use an `XMLHttpRequest` uploader isolated behind the direct-upload helper so the
+UI can show byte-based upload percentage. Incremental hashing should also report
+percentage. Signing, draft creation, and other short operations remain
+indeterminate. This does not affect the server contract.
 
 The state machine should prevent duplicate submission:
 
@@ -492,19 +492,19 @@ visible field errors, and links that clearly indicate they open Kyron Studio.
 - Add basic response security headers through Next.js configuration or Vercel.
 - Consider platform/WAF rate limiting before broad internal rollout. An
   in-memory limiter is not dependable across Vercel instances.
-- Restrict access using the team's chosen Vercel/internal authentication layer;
-  authentication is not specified in the current repository and must be decided
-  before production rollout.
+- Enable Vercel Authentication for preview deployments during the initial build.
+  A separate production identity decision is still required before the launcher
+  is exposed beyond the preview pilot.
 
 ## 11. Implementation milestones
 
 ### Milestone 0 — Resolve deployment prerequisites
 
-- Confirm the internal access/authentication mechanism.
+- Enable and verify Vercel Authentication for preview deployments.
 - Obtain a non-production Kyron API key and confirm Vercel environment setup.
 - Verify signed-upload CORS, browser-managed headers, URL expiry, and retry
   behavior with PDF and PPTX samples.
-- Choose the AI provider/behavior or explicitly defer AI generation.
+- Keep AI generation out of the initial build.
 
 ### Milestone 1 — Scaffold and quality gates
 
@@ -544,10 +544,14 @@ Exit criteria: the empty app passes `npm run lint` and `npm run typecheck`.
 - Resume via the draft ID in the URL.
 - Add terminal success/error views and editor/preview links.
 
-### Milestone 6 — Optional AI assistance
+### Milestone 6 — Deferred AI assistance
 
-- After provider and behavior are approved, add a separate server-only generation
-  route with a strict structured-output schema.
+This milestone is explicitly deferred and is not part of the initial delivery.
+If it is approved later:
+
+- Choose the provider, model, source-input policy, and generated fields.
+- Add a separate server-only generation route with a strict structured-output
+  schema.
 - Make AI assistance optional and editable; never block manual submission.
 - Add timeout, rate-limit, invalid-output, and safe-error handling.
 
@@ -575,18 +579,17 @@ Exit criteria: the empty app passes `npm run lint` and `npm run typecheck`.
 - **Release checks:** `npm run lint`, `npm run typecheck`, tests, and a production
   build.
 
-## 13. Decisions still needed
+## 13. Product decisions
 
-These cannot be resolved from the current repository and should be answered
-before the corresponding milestone:
+Decisions recorded for the initial build:
 
-1. Which internal authentication/access-control mechanism should protect the
-   deployed launcher?
-2. Which AI provider/model should generate form content, what source input should
-   it use, and which fields should it generate?
-3. Is indeterminate upload progress acceptable for MVP, or is percentage upload
-   progress required?
+1. Protect preview deployments with Vercel Authentication.
+2. Defer AI-generated course information; the initial form uses manual entry.
+3. Show percentage progress for browser-side hashing and direct upload. Use
+   indeterminate stage indicators where numeric progress is unavailable.
 
-The first decision is required before production release. The second is required
-only for the optional AI milestone. The third has a safe default: use
-indeterminate progress initially.
+Still required before a broader production rollout:
+
+1. Choose the long-term production identity and authorization mechanism.
+2. If AI assistance is later approved, define its provider, model, source-input
+   policy, generated fields, and institutional data-governance requirements.
