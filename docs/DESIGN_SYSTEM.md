@@ -1,0 +1,118 @@
+# CPE Internal Tool Design System
+
+## Purpose
+
+Create a restrained, efficient internal tool that feels connected to Stevens
+CPE without looking like a marketing page. The interface should prioritize
+repeatable workflows, clear status, readable data, and human review.
+
+## Principles
+
+1. **Task first:** important actions and current status should be immediately
+   visible.
+2. **Brand through restraint:** use black, white, and gray as the foundation;
+   reserve Stevens Red for primary actions and important emphasis.
+3. **Consistent over decorative:** reuse the same spacing, controls, and status
+   patterns across every workflow.
+4. **Human in control:** automated suggestions remain editable and require
+   explicit confirmation before submission.
+5. **Accessible by default:** never communicate meaning through color alone.
+
+## Color
+
+### Brand primitives
+
+| Token | Value | Purpose |
+| --- | --- | --- |
+| `stevens-red` | `#A32638` | Primary actions, focus, urgent emphasis |
+| `stevens-black` | `#000000` | Primary text, strong selected states |
+| `stevens-dark-gray` | `#363D45` | Secondary text and dark UI |
+| `stevens-gray` | `#7F7F7F` | Muted text and metadata |
+| `stevens-light-gray` | `#E4E5E6` | Borders and subtle surfaces |
+| `stevens-white` | `#FFFFFF` | Main background and surfaces |
+
+Components use semantic roles such as `background`, `surface`, `foreground`,
+`muted`, `border`, `primary`, and `destructive` instead of brand values
+directly. Do not create red tints, colorful gradients, or decorative accent
+colors.
+
+### Status treatment
+
+| Status | Treatment |
+| --- | --- |
+| Editing | Light-gray surface, dark text, edit icon |
+| Saving | Gray text and spinner |
+| Generating | Dark-gray surface, white text, spinner |
+| Complete | White surface, black border, check icon |
+| Needs attention / Error | Stevens Red text and border, warning icon |
+| Unavailable | Stevens Red icon with an explicit text label |
+
+Status must always include a label and, where useful, an icon. Additional
+semantic colors may be considered later only if usability testing shows that
+the brand palette is insufficient.
+
+## Typography
+
+Use one sans-serif family throughout the product: **Geist**, with system
+sans-serif fallback. Do not use decorative serif display type.
+
+| Role | Size |
+| --- | --- |
+| Page title | 28–32px |
+| Section title | 18–20px |
+| Component title | 14–16px |
+| Body and controls | 14px |
+| Metadata and helper text | 12px |
+
+Use sentence case for headings, navigation, buttons, and status labels.
+
+## Spacing and shape
+
+- Use a 4px base spacing grid; prefer 8, 12, 16, 24, and 32px gaps.
+- Standard controls are 40px high.
+- Table rows are approximately 48–56px high.
+- Use 8–12px corner radii for controls and cards.
+- Prefer borders over shadows. Reserve shadows for dialogs, popovers, and
+  floating menus.
+- Avoid oversized cards, large decorative backgrounds, and excessive empty
+  space in workflow pages.
+
+## Responsive behavior
+
+- Design desktop and laptop layouts as the primary experience, with a full
+  sidebar, filters, and data tables.
+- Keep tablet layouts fully usable with collapsed navigation and simplified or
+  horizontally scrollable tables.
+- Preserve all core tasks on mobile with menu navigation, card-based lists,
+  stacked forms, and sufficiently large controls.
+- Test representative widths around 390px, 768px, and 1440px instead of
+  designing for every individual device.
+
+## Core components
+
+- **Primary button:** Stevens Red background with white text. Use once per
+  action group.
+- **Secondary button:** white background, dark text, and visible border.
+- **Sidebar item:** neutral by default; selected state uses strong contrast and
+  a restrained red indicator.
+- **Card:** white surface, light-gray border, small radius, minimal shadow.
+- **Form controls:** persistent labels, clear helper/error text, and visible
+  focus state.
+- **Table/list:** searchable and filterable, with status and primary row action
+  easy to scan.
+- **Status badge:** compact text-and-icon label following the status table
+  above.
+- **Alert/empty state:** explain what happened and provide one clear next
+  action.
+
+## Interaction and accessibility
+
+- Provide visible hover, focus, active, disabled, loading, empty, success, and
+  error states.
+- Keep keyboard focus visible and preserve logical tab order.
+- Meet WCAG AA text contrast.
+- Use icons as support, never as the only label for an unfamiliar action.
+- Loading messages should describe the active step, such as “Generating
+  content” or “Synchronizing records.”
+- External, destructive, and irreversible actions require explicit user
+  confirmation.

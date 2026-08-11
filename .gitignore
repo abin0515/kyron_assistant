@@ -21,3 +21,6 @@ out/
 *.tsbuildinfo
 coverage/
 .typescript/
+
+# Generated test artifacts
+output/

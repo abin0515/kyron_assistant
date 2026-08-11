@@ -1,83 +1,62 @@
-# Kyron API Notes
+# Kyron Public API Notes
 
-## Public API
+## Connection
 
-Base URL:
+- Base URL: `https://app.kyronlearning.com/api/v2`
+- Authentication: `Authorization: Bearer <KYRON_API_KEY>`
+- Requests are scoped to the API key's organization.
 
-https://app.kyronlearning.com/api/v2
+The repository OpenAPI file is the source of truth for request and response
+schemas: `docs/reference/openapi.yaml`.
 
-Authentication:
+## Used endpoints
 
-Authorization: Bearer <KYRON_API_KEY>
+- `GET /organizations/current`: authenticated organization name and ID
+- `POST /lesson_collections`: create an asynchronous asset
+- `GET /lesson_collections/{id}`: read generation status and URLs
+- `POST /files`: request a signed file-upload target
 
-## Documented endpoints
+The public API also documents list, publish, and delete operations. Publishing
+and Kyron asset deletion are outside the V1 application.
 
-- GET `/organizations/current`
-- POST `/files`
-- GET `/lesson_collections`
-- POST `/lesson_collections`
-- GET `/lesson_collections/{id}`
-- POST `/lesson_collections/{id}/publish`
-- DELETE `/lesson_collections/{id}`
+## Draft lifecycle
 
-## Course creation response
+Creation returns the full asset record immediately, including:
 
-The creation endpoint returns:
+- `id`
+- `status` and `status_message`
+- `preview_url`
+- `editor_url`
 
-- Asset ID
-- Status
-- Status message
-- Preview URL
-- Editor URL
+Observed statuses are `started`, `done`, and `error`. The preview and editor URLs
+exist while generation is running, but the UI exposes them after completion.
 
-Generation is asynchronous.
+Kyron remains the source of truth. A documented `404` can mean the asset was
+deleted or the current API key cannot access it.
 
-Observed statuses:
+## File upload
 
-- started
-- done
-- error
+1. Call `POST /files` with filename, byte size, Base64 MD5 checksum, and MIME
+   type.
+2. Receive `signed_id` plus `direct_upload.url` and required headers.
+3. `PUT` the original PDF/PPTX bytes to the signed URL.
+4. Pass `signed_id` as `alignment_content_signed_id` during creation.
 
-## File upload flow
+Supported files are PDF and PPTX up to 250 MB.
 
-1. Call `POST /files`.
-2. Receive a signed ID and direct-upload URL.
-3. Upload file bytes directly to the signed URL.
-4. Pass the signed ID as `alignment_content_signed_id` when creating
-   the lesson collection.
+Both browser-to-storage and server-to-server uploads were verified with a test
+PDF. Normal browsers still block the direct `PUT` because the current storage
+CORS policy does not allow the application origin. The attachment UI therefore
+remains hidden.
 
-Supported source files:
+## API gaps for future workflow
 
-- PDF
-- PPTX
-- Maximum documented size: 250 MB
+The V1 cannot use the public API to:
 
-## Human-in-the-loop workflow
+- browse organization folders or place an asset in a selected folder
+- read generated sections, activities, scripts, or transcripts
+- perform detailed editor operations
 
-The API generates an editable instructional draft that may include:
-
-- Videos
-- Multiple-choice questions
-- Clarifying conversations
-- Narration
-- Transcripts
-
-A human must still:
-
-- Review and edit generated content
-- Check learning-objective alignment
-- Assemble final videos
-- Preview the result
-- Approve publishing
-
-## Internal API research
-
-Kyron Studio appears to use undocumented `/api/v1` endpoints such as:
-
-- GET `/api/v1/lessons/{lessonId}/lesson_sections`
-- GET `/api/v1/lessons/{lessonId}/lesson_sections/{sectionId}/lesson_activities`
-
-These use browser session authentication and CSRF tokens.
-
-They must not be used in the MVP because they are undocumented and may
-change without notice.
+Kyron Studio uses undocumented `/api/v1` endpoints for some of these features.
+They must not be used by this application unless Kyron exposes and supports
+them publicly.

@@ -12,8 +12,8 @@ const geist = Geist({
 });
 
 export const metadata: Metadata = {
-  title: "Kyron Course Draft Launcher",
-  description: "Internal course draft launcher for the Stevens CPE team.",
+  title: "CPE Course Studio",
+  description: "Internal course draft workspace for the Stevens CPE team.",
 };
 
 type RootLayoutProps = Readonly<{
@@ -28,6 +28,7 @@ export default function RootLayout({ children }: RootLayoutProps) {
         "font-sans",
         geist.variable,
       )}
+      data-scroll-behavior="smooth"
       lang="en"
     >
       <body className="bg-paper text-ink m-0 font-sans antialiased">

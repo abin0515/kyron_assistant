@@ -1,98 +1,68 @@
-# Kyron Course Draft Launcher — MVP Specification
+# Course Draft Workspace — V1 Specification
 
-## Background
+## Goal
 
-The CPE team currently uses Kyron Studio to generate Lesson, Practice,
-and Scenario assets. The process includes entering course details,
-uploading source materials, waiting for generation, reviewing the draft,
-assembling videos, and publishing.
+Reduce the repeated setup work required to create an editable Kyron asset while
+keeping a human responsible for reviewing and submitting the course setup.
 
-Kyron automates draft generation, but human review and video assembly
-remain manual.
+## Workflow
 
-## Problem
+1. Create a local draft workspace immediately.
+2. Paste a brief, transcript, or other source text.
+3. Optionally generate a suggested title, description, learning objective,
+   audience, asset type, and duration with AI.
+4. Review and edit every generated field.
+5. Autosave the workspace in Neon.
+6. Submit the completed setup to Kyron.
+7. Poll Kyron and synchronize the latest status into Neon.
+8. When complete, open the Kyron preview or editor.
 
-Course creators repeatedly need to:
+## Supported inputs
 
-- Prepare a title and description
-- Define the audience
-- Write a learning objective
-- Select an asset type and duration
-- Upload PDF or PPTX source material
-- Wait for Kyron generation
-- Locate the editor and preview links
+- Asset types: `lesson`, `practice`, `scenario`
+- Durations: `480`, `900`, `1800`, `3600` seconds
+- Required course fields: name, description, learning objective, audience
+- Optional source text: up to 50,000 characters
 
-The MVP should automate these setup and draft-generation steps.
+## V1 features
 
-## MVP workflow
-
-1. User uploads a PDF or PPTX.
-2. User enters or AI-generates:
-   - Name
-   - Description
-   - Learning objective
-   - Audience
-   - Asset type
-   - Duration
-3. Application requests signed upload information from Kyron.
-4. Browser uploads the file directly to the signed URL.
-5. Application creates the Kyron lesson collection.
-6. Application polls the asset status.
-7. When generation completes, display:
-   - Editor URL
-   - Preview URL
-8. User continues editing manually in Kyron Studio.
-
-## Supported asset types
-
-- lesson
-- practice
-- scenario
-
-## Supported durations
-
-- 480 seconds
-- 900 seconds
-- 1800 seconds
-- 3600 seconds
-
-## MVP scope
-
-- Course-information form
-- Optional source-file upload
+- Resumable, autosaved workspaces
+- AI-assisted course setup with editable results
+- Manual course setup
 - Kyron draft creation
-- Status polling
-- Success and error handling
-- Preview and editor links
-- Server-side credential handling
+- Browser polling and explicit list synchronization
+- Status filters: Editing, In progress, Complete, Needs attention
+- Preview and editor handoff
+- Temporary user-scoped workspace and draft history
+- Clear loading, validation, empty, and error states
 
-## Non-goals
+## Data ownership
 
-- Editing individual Kyron activities
-- Automatically assembling videos
-- Automatically publishing content
-- Using undocumented Kyron `/api/v1` endpoints
-- Learner analytics
-- Batch generation
-- Database persistence
-- Browser extension
+- Kyron is the source of truth for asset generation and availability.
+- Neon stores local workspaces, ownership, Kyron IDs, and last-observed status.
+- A Kyron `404` marks a saved draft unavailable; it does not delete local
+  history.
+- Only workspace-created records appear in the management list.
 
-## Initial architecture
+## Deferred
 
-Next.js UI
-→ Next.js Route Handlers
-→ Kyron Public API `/api/v2`
+- Production authentication and authorization
+- PDF/PPTX attachment delivery
+- Batch creation
+- Kyron folder selection and placement
+- Reading or editing generated sections and activities
+- Publishing and Kyron asset deletion
 
-The browser should poll the application status endpoint every 15–30
-seconds. Vercel functions must not remain open while Kyron generates
-the asset.
+The file-signing endpoint remains available for integration testing, but the
+attachment UI stays hidden until Kyron enables browser CORS or a persistent
+backend-transfer workflow is implemented.
 
 ## Acceptance criteria
 
-- A user can submit valid course information.
-- A user can optionally upload a PDF or PPTX.
-- API credentials never appear in client code.
-- The application creates a Kyron draft successfully.
-- The application displays generation progress.
-- The application displays editor and preview links when complete.
-- Errors are shown clearly without exposing secrets.
+- A user can leave and resume an unfinished workspace.
+- AI suggestions remain optional and editable.
+- A valid workspace creates a Kyron draft once submitted.
+- The app displays and synchronizes generation status.
+- Completed drafts expose preview and editor links.
+- Credentials remain server-side.
+- `npm run lint`, `npm run typecheck`, and `npm run build` pass.
