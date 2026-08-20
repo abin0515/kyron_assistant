@@ -35,7 +35,7 @@ export function WorkspaceForm({
     <Card className="gap-0 rounded-xl border-border py-0 ring-1 ring-border">
       <CardHeader className="flex flex-row items-start justify-between gap-4 border-b border-border px-5 py-4">
         <div className="grid gap-1">
-          <CardTitle className="text-base font-bold">
+          <CardTitle className="text-base font-light">
             2. Review course setup
           </CardTitle>
           <p className="text-xs text-muted-foreground">
@@ -43,7 +43,7 @@ export function WorkspaceForm({
           </p>
         </div>
         {generated ? (
-          <Badge className="border-border bg-white text-foreground" variant="outline">
+          <Badge className="border-border bg-card text-foreground" variant="outline">
             <Sparkles aria-hidden="true" />
             AI generated
           </Badge>
@@ -56,7 +56,7 @@ export function WorkspaceForm({
           label="Title"
         >
           <Input
-            className="h-10 rounded-lg bg-white"
+            className="h-10 rounded-lg bg-card"
             disabled={disabled}
             id="name"
             maxLength={COURSE_FIELD_LIMITS.name}
@@ -73,7 +73,7 @@ export function WorkspaceForm({
           label="Description"
         >
           <Textarea
-            className="min-h-28 rounded-lg bg-white"
+            className="min-h-28 rounded-lg bg-card"
             disabled={disabled}
             id="description"
             maxLength={COURSE_FIELD_LIMITS.description}
@@ -93,7 +93,7 @@ export function WorkspaceForm({
           label="Learning objective"
         >
           <Textarea
-            className="min-h-28 rounded-lg bg-white"
+            className="min-h-28 rounded-lg bg-card"
             disabled={disabled}
             id="learningObjective"
             maxLength={COURSE_FIELD_LIMITS.learningObjective}
@@ -113,7 +113,7 @@ export function WorkspaceForm({
           label="Audience"
         >
           <Input
-            className="h-10 rounded-lg bg-white"
+            className="h-10 rounded-lg bg-card"
             disabled={disabled}
             id="audience"
             maxLength={COURSE_FIELD_LIMITS.audience}
@@ -126,7 +126,7 @@ export function WorkspaceForm({
 
         <TextField label="Asset type">
           <select
-            className="h-10 w-full rounded-lg border border-border bg-white px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-55"
+            className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-55"
             disabled={disabled}
             id="assetType"
             onChange={(event) =>
@@ -145,7 +145,7 @@ export function WorkspaceForm({
 
         <TextField label="Duration">
           <select
-            className="h-10 w-full rounded-lg border border-border bg-white px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-55"
+            className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-55"
             disabled={disabled}
             id="duration"
             onChange={(event) =>

@@ -48,14 +48,19 @@ export function NewDraftWorkspace() {
   }
 
   return (
-    <div className="grid min-h-[calc(100vh-8rem)] place-items-center py-8 text-black">
-      <Card className="w-full max-w-md border-[#E4E5E6] bg-white ring-1 ring-[#E4E5E6]">
+    <div className="grid min-h-[calc(100vh-8rem)] place-items-center py-8 text-foreground">
+      <Card className="w-full max-w-md border-border bg-card ring-1 ring-border">
         <CardContent className="grid justify-items-center gap-5 px-6 py-10 text-center">
           {errorMessage ? (
             <>
               <div className="grid gap-2">
-                <h1 className="text-xl font-bold">Workspace not created</h1>
-                <p className="text-sm leading-relaxed text-[#60656B]" role="alert">
+                <h1 className="font-heading text-xl font-light">
+                  Workspace not created
+                </h1>
+                <p
+                  className="text-sm leading-relaxed text-muted-foreground"
+                  role="alert"
+                >
                   {errorMessage}
                 </p>
               </div>
@@ -67,11 +72,13 @@ export function NewDraftWorkspace() {
             <>
               <LoaderCircle
                 aria-hidden="true"
-                className="size-7 animate-spin text-[#A32638]"
+                className="size-7 animate-spin text-primary"
               />
               <div className="grid gap-2">
-                <h1 className="text-xl font-bold">Creating workspace</h1>
-                <p className="text-sm text-[#60656B]">
+                <h1 className="font-heading text-xl font-light">
+                  Creating workspace
+                </h1>
+                <p className="text-sm text-muted-foreground">
                   Preparing a saved draft that you can continue later.
                 </p>
               </div>

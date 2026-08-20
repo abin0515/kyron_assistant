@@ -63,7 +63,7 @@ export function WorkspaceStatusPanel({
   return (
     <Card className="sticky top-24 gap-0 rounded-xl border-border py-0 ring-1 ring-border">
       <CardHeader className="flex flex-row items-center justify-between border-b border-border px-5 py-4">
-        <CardTitle className="text-base font-bold">Draft readiness</CardTitle>
+        <CardTitle className="text-base font-light">Draft readiness</CardTitle>
         <DraftStatusBadge
           status={workspace.status === "error" ? "attention" : "editing"}
         />
@@ -140,7 +140,7 @@ function SubmittedDraftStatus({
   return (
     <Card className="sticky top-24 gap-0 rounded-xl border-border py-0 ring-1 ring-border">
       <CardHeader className="flex flex-row items-center justify-between border-b border-border px-5 py-4">
-        <CardTitle className="text-base font-bold">Draft status</CardTitle>
+        <CardTitle className="text-base font-light">Draft status</CardTitle>
         <DraftStatusBadge status={displayStatus} />
       </CardHeader>
       <CardContent className="grid gap-5 px-5 py-5">
@@ -153,7 +153,9 @@ function SubmittedDraftStatus({
           </p>
         </div>
 
-        {draft && pollingState.phase === "complete" ? (
+        {draft &&
+        (pollingState.phase === "complete" ||
+          pollingState.phase === "generation_error") ? (
           <div className="grid gap-3">
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
               <a

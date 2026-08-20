@@ -168,7 +168,7 @@ export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
             Back to drafts
           </Link>
           <div className="grid gap-1.5">
-            <h1 className="text-[1.8rem] leading-tight font-bold tracking-[-0.025em]">
+            <h1 className="font-heading text-[1.8rem] leading-tight font-light tracking-[-0.025em]">
               {workspace.name || "Untitled draft"}
             </h1>
             <div className="flex flex-wrap items-center gap-3">
@@ -270,7 +270,9 @@ function ErrorState({ message }: { message: string }) {
   return (
     <Card className="mx-auto max-w-2xl rounded-xl border-border ring-1 ring-border">
       <CardContent className="grid gap-4 px-6 py-12">
-        <h1 className="text-xl font-bold">Workspace unavailable</h1>
+        <h1 className="font-heading text-xl font-light">
+          Workspace unavailable
+        </h1>
         <p className="text-sm text-primary" role="alert">
           {message}
         </p>

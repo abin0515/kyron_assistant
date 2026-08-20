@@ -49,6 +49,17 @@ PDF. Normal browsers still block the direct `PUT` because the current storage
 CORS policy does not allow the application origin. The attachment UI therefore
 remains hidden.
 
+The application's source ingestion may support additional formats such as
+DOCX. That does not imply that Kyron accepts those files as attachments. A
+DOCX can be parsed for AI course setup recommendations, but it must be converted
+or omitted during Kyron submission unless Kyron confirms public DOCX support.
+
+For the planned persistent workflow, private object storage holds the file
+bytes and Neon stores only ownership, storage references, processing state, and
+extracted content. On submission, the server reads a supported file from object
+storage, uploads it to Kyron's signed target, and sends the returned `signed_id`
+with the draft creation request.
+
 ## API gaps for future workflow
 
 The V1 cannot use the public API to:

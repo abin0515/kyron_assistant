@@ -1,6 +1,6 @@
 "use client";
 
-import { FileText, Menu, Plus } from "lucide-react";
+import { FileText, Layers3, Menu, Plus } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
@@ -16,7 +16,7 @@ export function WorkspaceShell({ children }: WorkspaceShellProps) {
   const pathname = usePathname();
 
   return (
-    <main className="min-h-screen bg-background text-foreground [--background:#F7F7F7] [--border:#E4E5E6] [--card:#FFFFFF] [--card-foreground:#000000] [--destructive:#A32638] [--foreground:#000000] [--input:#E4E5E6] [--muted:#E4E5E6] [--muted-foreground:#7F7F7F] [--primary:#A32638] [--primary-foreground:#FFFFFF] [--ring:#A32638] [--secondary:#FFFFFF] [--secondary-foreground:#363D45]">
+    <main className="min-h-screen bg-background text-foreground">
       <div className="flex min-h-screen">
         <DesktopNavigation pathname={pathname} />
 
@@ -42,6 +42,7 @@ function DesktopNavigation({ pathname }: { pathname: string }) {
 
       <nav aria-label="Primary navigation" className="grid gap-1 px-3">
         <DraftsLink active={pathname.startsWith("/drafts")} />
+        <BatchDraftsLink active={pathname.startsWith("/batches")} />
       </nav>
     </aside>
   );
@@ -67,7 +68,7 @@ function TopBar({ pathname }: { pathname: string }) {
 function MobileNavigation({ pathname }: { pathname: string }) {
   return (
     <details className="group relative lg:hidden">
-      <summary className="grid size-9 cursor-pointer list-none place-items-center rounded-lg border border-border bg-white [&::-webkit-details-marker]:hidden">
+      <summary className="grid size-9 cursor-pointer list-none place-items-center rounded-lg border border-border bg-card [&::-webkit-details-marker]:hidden">
         <Menu aria-hidden="true" className="size-4" />
         <span className="sr-only">Open navigation</span>
       </summary>
@@ -77,6 +78,7 @@ function MobileNavigation({ pathname }: { pathname: string }) {
       >
         <NewDraftLink className="mb-1 w-full justify-start" />
         <DraftsLink active={pathname.startsWith("/drafts")} />
+        <BatchDraftsLink active={pathname.startsWith("/batches")} />
       </nav>
     </details>
   );
@@ -123,7 +125,7 @@ function DraftsLink({ active }: { active: boolean }) {
       className={cn(
         "relative flex min-h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium",
         active
-          ? "bg-foreground text-white before:absolute before:top-2 before:bottom-2 before:-left-3 before:w-1 before:rounded-r before:bg-primary"
+          ? "bg-foreground text-primary-foreground before:absolute before:top-2 before:bottom-2 before:-left-3 before:w-1 before:rounded-r before:bg-primary"
           : "text-muted-foreground hover:bg-muted hover:text-foreground",
       )}
       href="/drafts"
@@ -134,7 +136,39 @@ function DraftsLink({ active }: { active: boolean }) {
   );
 }
 
+function BatchDraftsLink({ active }: { active: boolean }) {
+  return (
+    <Link
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "relative flex min-h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium",
+        active
+          ? "bg-foreground text-primary-foreground before:absolute before:top-2 before:bottom-2 before:-left-3 before:w-1 before:rounded-r before:bg-primary"
+          : "text-muted-foreground hover:bg-muted hover:text-foreground",
+      )}
+      href="/batches"
+    >
+      <Layers3 aria-hidden="true" className="size-4" />
+      <span>Batch drafts</span>
+      <span
+        className={cn(
+          "ml-auto rounded-full border px-1.5 py-0.5 text-[0.6rem] font-bold tracking-wide uppercase",
+          active
+            ? "border-primary-foreground/30 text-primary-foreground/80"
+            : "border-border text-muted-foreground",
+        )}
+      >
+        Concept
+      </span>
+    </Link>
+  );
+}
+
 function getPageLabel(pathname: string): string {
+  if (pathname.startsWith("/batches")) {
+    return "Batch drafts · Concept";
+  }
+
   if (pathname === "/drafts/new") {
     return "New draft";
   }

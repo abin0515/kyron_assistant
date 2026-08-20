@@ -5,8 +5,10 @@
 ```text
 Next.js UI
   → Route Handlers
-      ├→ workspace and draft services
-      │   └→ Neon PostgreSQL
+      ├→ authentication
+      ├→ workspace, file, batch, and draft services
+      │   ├→ Neon PostgreSQL
+      │   └→ private object storage
       ├→ Kyron public API
       └→ OpenAI API
 ```
@@ -18,6 +20,9 @@ Next.js UI
 
 Credentials never reach the browser. Kyron and AI responses are validated
 before use.
+
+Database records store ownership, workflow state, extracted content, and file
+metadata. Uploaded file bytes belong in private object storage, not PostgreSQL.
 
 ## Implemented V1 flow
 
@@ -99,17 +104,56 @@ current CORS policy, so the UI remains hidden.
 Future options:
 
 1. Kyron allows the application origins and direct browser `PUT` requests.
-2. The app stores private files temporarily and transfers them through a
+2. The app stores private files and transfers supported files through a
    resumable backend workflow.
+
+Application ingestion and Kyron attachment delivery are separate concerns.
+The app may parse DOCX, PDF, and PPTX for AI recommendations, while the current
+Kyron public upload workflow accepts only PDF and PPTX.
+
+## Authentication plan
+
+- Use Neon Auth with Microsoft sign-in.
+- Keep Vercel Authentication as separate preview-deployment protection.
+- Replace the synchronous temporary identity with an asynchronous server-only
+  `requireCurrentUser` helper.
+- Protect workspace, batch, draft, and file pages and Route Handlers.
+- Continue using the existing text `created_by_id` columns for the Neon Auth
+  user ID.
+- Restrict MVP access with a small approved-user allowlist until an official
+  Stevens Microsoft tenant configuration is available.
+
+## Source-file and batch model
+
+- One uploaded file is stored once and linked to its owning workspace.
+- Neon stores filename, MIME type, size, storage key, extraction state, and
+  analysis state.
+- Extracted text and structured content are persisted so AI analysis can be
+  reviewed or retried without re-uploading the file.
+- A batch groups multiple workspaces; each workspace remains independently
+  editable, submittable, retryable, and synchronized.
+- For structured lesson-plan DOCX files, one document is initially treated as
+  one draft and each table row as an activity. The user must confirm the draft
+  boundary when the document is ambiguous.
 
 ## Next milestones
 
-1. Replace the temporary identity with production authentication.
-2. Add Kyron folder discovery and placement when public endpoints are available.
-3. Choose and implement the production attachment workflow.
-4. Add batch workspace creation.
-5. Add generated-content reads and selected editor operations when supported.
-6. Add pagination and background synchronization before larger-scale usage.
+1. Enable Neon Auth and verify Microsoft sign-in and server-side sessions.
+2. Replace the temporary identity and enforce owner-scoped access.
+3. Add private source-file persistence and database metadata.
+4. Extract structured DOCX, PDF, and PPTX content.
+5. Generate and persist AI course setup recommendations from files.
+6. Add batch workspace creation on the shared ingestion workflow.
+7. Transfer supported source files to Kyron during submission.
+8. Add Kyron folder placement and generated-content operations when public APIs
+   become available.
+9. Add pagination and background synchronization before larger-scale usage.
+
+## Deferred engineering improvements
+
+- Cancel the in-flight workspace creation request when `/drafts/new` unmounts,
+  preventing an abandoned loading page from creating an orphaned workspace or
+  triggering a late redirect.
 
 ## Release checklist
 

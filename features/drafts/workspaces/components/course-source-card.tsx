@@ -29,7 +29,7 @@ export function CourseSourceCard({
   return (
     <Card className="gap-0 rounded-xl border-border py-0 ring-1 ring-border">
       <CardHeader className="border-b border-border px-5 py-4">
-        <CardTitle className="text-base font-bold">
+        <CardTitle className="text-base font-light">
           1. Add source information
         </CardTitle>
         <p className="text-xs text-muted-foreground">
@@ -40,7 +40,7 @@ export function CourseSourceCard({
         <label className="grid gap-1.5" htmlFor="sourceText">
           <span className="text-sm font-semibold">Brief or transcript</span>
           <Textarea
-            className="min-h-40 rounded-lg bg-white"
+            className="min-h-40 rounded-lg bg-card"
             disabled={disabled || generating}
             id="sourceText"
             maxLength={COURSE_BRIEF_MAX_LENGTH}

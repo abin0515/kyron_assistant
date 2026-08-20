@@ -124,7 +124,7 @@ export function WorkspaceList() {
     <div className="grid gap-6">
       <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div className="grid gap-1.5">
-          <h1 className="text-[1.8rem] leading-tight font-bold tracking-[-0.025em]">
+          <h1 className="font-heading text-[1.8rem] leading-tight font-light tracking-[-0.025em]">
             Drafts
           </h1>
           <p className="max-w-2xl text-sm text-muted-foreground">
@@ -153,7 +153,7 @@ export function WorkspaceList() {
       <Card className="min-w-0 gap-0 rounded-xl border-border py-0 ring-1 ring-border">
         <CardHeader className="flex flex-row items-center justify-between border-b border-border px-5 py-4">
           <div className="grid gap-1">
-            <CardTitle className="text-base font-bold">
+            <CardTitle className="text-base font-light">
               {filterHeading(activeFilter)}
             </CardTitle>
             <p className="text-xs text-muted-foreground">
@@ -303,7 +303,10 @@ function WorkspaceRecords({
   return (
     <>
       {errorMessage ? (
-        <p className="border-b border-border bg-[#FFF5F6] px-5 py-3 text-sm text-primary" role="alert">
+        <p
+          className="border-b border-border bg-card px-5 py-3 text-sm text-primary"
+          role="alert"
+        >
           {errorMessage}
         </p>
       ) : null}

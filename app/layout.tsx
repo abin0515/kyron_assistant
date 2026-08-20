@@ -1,14 +1,21 @@
 import type { Metadata } from "next";
-import { Geist } from "next/font/google";
+import { IBM_Plex_Sans, Saira } from "next/font/google";
 import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
 import "./globals.css";
 
-const geist = Geist({
+const bodyFont = IBM_Plex_Sans({
   subsets: ["latin"],
-  variable: "--font-sans",
+  variable: "--font-cpe-body",
+  weight: ["400", "500", "600"],
+});
+
+const headingFont = Saira({
+  subsets: ["latin"],
+  variable: "--font-cpe-heading",
+  weight: ["300", "400"],
 });
 
 export const metadata: Metadata = {
@@ -26,12 +33,13 @@ export default function RootLayout({ children }: RootLayoutProps) {
       className={cn(
         "scroll-smooth motion-reduce:scroll-auto",
         "font-sans",
-        geist.variable,
+        bodyFont.variable,
+        headingFont.variable,
       )}
       data-scroll-behavior="smooth"
       lang="en"
     >
-      <body className="bg-paper text-ink m-0 font-sans antialiased">
+      <body className="m-0 bg-background font-sans text-foreground antialiased">
         {children}
       </body>
     </html>

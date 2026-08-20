@@ -44,18 +44,31 @@ keeping a human responsible for reviewing and submitting the course setup.
   history.
 - Only workspace-created records appear in the management list.
 
-## Deferred
+## Next phase
 
-- Production authentication and authorization
-- PDF/PPTX attachment delivery
-- Batch creation
+- Replace the temporary identity with Neon Auth and Microsoft sign-in.
+- Persist uploaded source files in private object storage and keep their
+  metadata and workspace ownership in Neon.
+- Extract structured content from DOCX, PDF, and PPTX files.
+- Generate and persist editable course setup recommendations from uploaded
+  files as well as pasted text.
+- Let a batch contain multiple independently reviewable and resumable
+  workspaces.
+- Transfer supported PDF/PPTX source files to Kyron when a reviewed workspace
+  is submitted.
+
+Authentication is intentionally implemented before file persistence so every
+workspace, file, and batch has a stable owner.
+
+## Still deferred
+
 - Kyron folder selection and placement
 - Reading or editing generated sections and activities
 - Publishing and Kyron asset deletion
 
-The file-signing endpoint remains available for integration testing, but the
-attachment UI stays hidden until Kyron enables browser CORS or a persistent
-backend-transfer workflow is implemented.
+The file-signing endpoint remains available for integration testing. The
+attachment UI stays hidden until the persistent source-file workflow is
+implemented.
 
 ## Acceptance criteria
 

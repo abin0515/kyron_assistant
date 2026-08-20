@@ -42,21 +42,22 @@ const STATUS_DETAILS: Record<
   generating: {
     label: "Generating",
     icon: <LoaderCircle aria-hidden="true" className="animate-spin" />,
-    className: "border-transparent bg-[#363D45] text-white",
+    className:
+      "border-transparent bg-secondary-foreground text-primary-foreground",
   },
   complete: {
     label: "Complete",
     icon: <CircleCheck aria-hidden="true" />,
-    className: "border-foreground bg-white text-foreground",
+    className: "border-foreground bg-card text-foreground",
   },
   attention: {
     label: "Needs attention",
     icon: <TriangleAlert aria-hidden="true" />,
-    className: "border-primary bg-white text-primary",
+    className: "border-primary bg-card text-primary",
   },
   not_found: {
     label: "Not found in Kyron",
     icon: <CircleX aria-hidden="true" />,
-    className: "border-primary bg-white text-primary",
+    className: "border-primary bg-card text-primary",
   },
 };

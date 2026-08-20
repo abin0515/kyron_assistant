@@ -11,7 +11,7 @@ repeatable workflows, clear status, readable data, and human review.
 1. **Task first:** important actions and current status should be immediately
    visible.
 2. **Brand through restraint:** use black, white, and gray as the foundation;
-   reserve Stevens Red for primary actions and important emphasis.
+   reserve CPE Red for primary actions and important emphasis.
 3. **Consistent over decorative:** reuse the same spacing, controls, and status
    patterns across every workflow.
 4. **Human in control:** automated suggestions remain editable and require
@@ -24,17 +24,21 @@ repeatable workflows, clear status, readable data, and human review.
 
 | Token | Value | Purpose |
 | --- | --- | --- |
-| `stevens-red` | `#A32638` | Primary actions, focus, urgent emphasis |
-| `stevens-black` | `#000000` | Primary text, strong selected states |
-| `stevens-dark-gray` | `#363D45` | Secondary text and dark UI |
-| `stevens-gray` | `#7F7F7F` | Muted text and metadata |
-| `stevens-light-gray` | `#E4E5E6` | Borders and subtle surfaces |
-| `stevens-white` | `#FFFFFF` | Main background and surfaces |
+| `cpe-red` | `#A32638` | Primary actions, focus, urgent emphasis |
+| `cpe-black` | `#000000` | Primary text, strong selected states |
+| `cpe-dark-gray` | `#363D45` | Secondary text and dark UI |
+| `cpe-gray` | `#7F7F7F` | Muted text and metadata |
+| `cpe-light-gray` | `#E4E5E6` | Borders and subtle surfaces |
+| `cpe-white` | `#FFFFFF` | Main background and surfaces |
 
 Components use semantic roles such as `background`, `surface`, `foreground`,
 `muted`, `border`, `primary`, and `destructive` instead of brand values
 directly. Do not create red tints, colorful gradients, or decorative accent
 colors.
+
+Brand primitives use the `cpe-*` namespace. Product components should normally
+use semantic utilities such as `bg-primary`, `text-foreground`, and
+`border-border` rather than referencing a brand primitive directly.
 
 ### Status treatment
 
@@ -44,8 +48,8 @@ colors.
 | Saving | Gray text and spinner |
 | Generating | Dark-gray surface, white text, spinner |
 | Complete | White surface, black border, check icon |
-| Needs attention / Error | Stevens Red text and border, warning icon |
-| Unavailable | Stevens Red icon with an explicit text label |
+| Needs attention / Error | CPE Red text and border, warning icon |
+| Unavailable | CPE Red icon with an explicit text label |
 
 Status must always include a label and, where useful, an icon. Additional
 semantic colors may be considered later only if usability testing shows that
@@ -53,13 +57,17 @@ the brand palette is insufficient.
 
 ## Typography
 
-Use one sans-serif family throughout the product: **Geist**, with system
-sans-serif fallback. Do not use decorative serif display type.
+Use **Saira** for page titles and major section headings. Use one of its
+lightest legible weights, normally Light, and do not use it for dense UI text.
+
+Use **IBM Plex Sans** for navigation, body copy, controls, tables, metadata,
+and other application UI. Arial is an acceptable fallback when the brand fonts
+cannot be loaded. Do not use decorative serif display type.
 
 | Role | Size |
 | --- | --- |
-| Page title | 28–32px |
-| Section title | 18–20px |
+| Page title | 28–32px, Saira Light |
+| Section title | 18–20px, Saira Light |
 | Component title | 14–16px |
 | Body and controls | 14px |
 | Metadata and helper text | 12px |
@@ -90,7 +98,7 @@ Use sentence case for headings, navigation, buttons, and status labels.
 
 ## Core components
 
-- **Primary button:** Stevens Red background with white text. Use once per
+- **Primary button:** CPE Red background with white text. Use once per
   action group.
 - **Secondary button:** white background, dark text, and visible border.
 - **Sidebar item:** neutral by default; selected state uses strong contrast and
