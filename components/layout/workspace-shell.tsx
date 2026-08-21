@@ -1,5 +1,6 @@
 "use client";
 
+import { UserButton, useUser } from "@clerk/nextjs";
 import { FileText, Layers3, Menu, Plus } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -44,13 +45,17 @@ function DesktopNavigation({ pathname }: { pathname: string }) {
         <DraftsLink active={pathname.startsWith("/drafts")} />
         <BatchDraftsLink active={pathname.startsWith("/batches")} />
       </nav>
+
+      <div className="mt-auto border-t border-border p-4">
+        <CurrentUserMenu />
+      </div>
     </aside>
   );
 }
 
 function TopBar({ pathname }: { pathname: string }) {
   return (
-    <header className="sticky top-0 z-20 flex h-16 items-center border-b border-border bg-card px-4 sm:px-6 lg:px-8">
+    <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-border bg-card px-4 sm:px-6 lg:px-8">
       <div className="flex items-center gap-3">
         <MobileNavigation pathname={pathname} />
         <div className="lg:hidden">
@@ -60,6 +65,10 @@ function TopBar({ pathname }: { pathname: string }) {
         <p className="hidden text-sm font-medium lg:block">
           {getPageLabel(pathname)}
         </p>
+      </div>
+
+      <div className="lg:hidden">
+        <CurrentUserMenu compact />
       </div>
     </header>
   );
@@ -98,6 +107,40 @@ function Brand() {
         <p className="truncate text-xs text-muted-foreground">
           Internal workspace
         </p>
+      </div>
+    </div>
+  );
+}
+
+function CurrentUserMenu({ compact = false }: { compact?: boolean }) {
+  const { isLoaded, user } = useUser();
+
+  if (!isLoaded) {
+    return (
+      <div
+        aria-label="Loading user"
+        className="h-9 w-full animate-pulse rounded-lg bg-muted"
+      />
+    );
+  }
+
+  if (!user) {
+    return null;
+  }
+
+  if (compact) {
+    return <UserButton />;
+  }
+
+  const name = user.fullName ?? user.username ?? "Signed-in user";
+  const email = user.primaryEmailAddress?.emailAddress ?? "";
+
+  return (
+    <div className="flex min-w-0 items-center gap-3">
+      <UserButton />
+      <div className="min-w-0">
+        <p className="truncate text-sm font-medium">{name}</p>
+        <p className="truncate text-xs text-muted-foreground">{email}</p>
       </div>
     </div>
   );

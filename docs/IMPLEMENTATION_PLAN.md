@@ -111,17 +111,14 @@ Application ingestion and Kyron attachment delivery are separate concerns.
 The app may parse DOCX, PDF, and PPTX for AI recommendations, while the current
 Kyron public upload workflow accepts only PDF and PPTX.
 
-## Authentication plan
+## Authentication
 
-- Use Neon Auth with Microsoft sign-in.
-- Keep Vercel Authentication as separate preview-deployment protection.
-- Replace the synchronous temporary identity with an asynchronous server-only
-  `requireCurrentUser` helper.
-- Protect workspace, batch, draft, and file pages and Route Handlers.
-- Continue using the existing text `created_by_id` columns for the Neon Auth
-  user ID.
-- Restrict MVP access with a small approved-user allowlist until an official
-  Stevens Microsoft tenant configuration is available.
+- Clerk provides sign-in, session management, and the user menu.
+- Next.js Proxy protects workspace, batch, draft, and related API routes.
+- A server-only `getCurrentUser` helper resolves the authenticated Clerk user.
+- Existing text `created_by_id` columns store Clerk user IDs and scope queries.
+- Vercel Authentication remains separate preview-deployment protection.
+- Microsoft OAuth and any tenant access policy are configured in Clerk.
 
 ## Source-file and batch model
 
@@ -138,16 +135,15 @@ Kyron public upload workflow accepts only PDF and PPTX.
 
 ## Next milestones
 
-1. Enable Neon Auth and verify Microsoft sign-in and server-side sessions.
-2. Replace the temporary identity and enforce owner-scoped access.
-3. Add private source-file persistence and database metadata.
-4. Extract structured DOCX, PDF, and PPTX content.
-5. Generate and persist AI course setup recommendations from files.
-6. Add batch workspace creation on the shared ingestion workflow.
-7. Transfer supported source files to Kyron during submission.
-8. Add Kyron folder placement and generated-content operations when public APIs
+1. Enable Microsoft sign-in in Clerk and verify owner-scoped data isolation.
+2. Add private source-file persistence and database metadata.
+3. Extract structured DOCX, PDF, and PPTX content.
+4. Generate and persist AI course setup recommendations from files.
+5. Add batch workspace creation on the shared ingestion workflow.
+6. Transfer supported source files to Kyron during submission.
+7. Add Kyron folder placement and generated-content operations when public APIs
    become available.
-9. Add pagination and background synchronization before larger-scale usage.
+8. Add pagination and background synchronization before larger-scale usage.
 
 ## Deferred engineering improvements
 

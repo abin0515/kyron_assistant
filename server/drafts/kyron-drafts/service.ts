@@ -26,7 +26,7 @@ export async function createDraftWithRequiredPersistence(
 ): Promise<Draft> {
   const draft = await requestDraftCreation(input);
 
-  await saveDraft(draft, getCurrentUser(), input.assetType);
+  await saveDraft(draft, await getCurrentUser(), input.assetType);
 
   return draft;
 }
@@ -58,7 +58,7 @@ export async function syncDraft(id: number): Promise<Draft> {
 export async function listCurrentUserDrafts(): Promise<
   StoredDraft[]
 > {
-  const user = getCurrentUser();
+  const user = await getCurrentUser();
 
   return listDraftsByUser(user.id);
 }
@@ -68,6 +68,26 @@ export async function syncCurrentUserDrafts(): Promise<
 > {
   const drafts = await listCurrentUserDrafts();
 
+  await syncDraftRecords(drafts);
+
+  return listCurrentUserDrafts();
+}
+
+export async function syncCurrentUserGeneratingDrafts(): Promise<
+  StoredDraft[]
+> {
+  const drafts = (await listCurrentUserDrafts()).filter(
+    (draft) =>
+      draft.status === "started" &&
+      draft.kyronAvailability !== "unavailable",
+  );
+
+  await syncDraftRecords(drafts);
+
+  return listCurrentUserDrafts();
+}
+
+async function syncDraftRecords(drafts: StoredDraft[]): Promise<void> {
   for (
     let index = 0;
     index < drafts.length;
@@ -88,8 +108,6 @@ export async function syncCurrentUserDrafts(): Promise<
       }
     }
   }
-
-  return listCurrentUserDrafts();
 }
 
 async function requestDraftCreation(
@@ -115,7 +133,7 @@ async function requestDraftCreation(
 
 async function persistDraft(draft: Draft): Promise<void> {
   try {
-    await saveDraft(draft, getCurrentUser());
+    await saveDraft(draft, await getCurrentUser());
   } catch (error) {
     console.error("Draft persistence failed.", {
       draftId: draft.id,
@@ -131,7 +149,7 @@ async function persistAvailability(
   availability: "unavailable" | "unknown",
 ): Promise<void> {
   try {
-    const user = getCurrentUser();
+    const user = await getCurrentUser();
 
     if (availability === "unavailable") {
       await markDraftUnavailable(draftId, user.id);

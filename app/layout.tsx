@@ -1,3 +1,4 @@
+import { ClerkProvider } from "@clerk/nextjs";
 import type { Metadata } from "next";
 import { IBM_Plex_Sans, Saira } from "next/font/google";
 import type { ReactNode } from "react";
@@ -29,19 +30,21 @@ type RootLayoutProps = Readonly<{
 
 export default function RootLayout({ children }: RootLayoutProps) {
   return (
-    <html
-      className={cn(
-        "scroll-smooth motion-reduce:scroll-auto",
-        "font-sans",
-        bodyFont.variable,
-        headingFont.variable,
-      )}
-      data-scroll-behavior="smooth"
-      lang="en"
-    >
-      <body className="m-0 bg-background font-sans text-foreground antialiased">
-        {children}
-      </body>
-    </html>
+    <ClerkProvider afterSignOutUrl="/sign-in">
+      <html
+        className={cn(
+          "scroll-smooth motion-reduce:scroll-auto",
+          "font-sans",
+          bodyFont.variable,
+          headingFont.variable,
+        )}
+        data-scroll-behavior="smooth"
+        lang="en"
+      >
+        <body className="m-0 bg-background font-sans text-foreground antialiased">
+          {children}
+        </body>
+      </html>
+    </ClerkProvider>
   );
 }

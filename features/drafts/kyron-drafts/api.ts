@@ -38,7 +38,20 @@ export async function listDrafts(
 export async function syncDrafts(
   signal?: AbortSignal,
 ): Promise<DraftListResponse> {
-  const response = await fetch("/api/drafts/sync", {
+  return requestDraftSync("/api/drafts/sync", signal);
+}
+
+export async function syncGeneratingDrafts(
+  signal?: AbortSignal,
+): Promise<DraftListResponse> {
+  return requestDraftSync("/api/drafts/sync?scope=generating", signal);
+}
+
+async function requestDraftSync(
+  url: string,
+  signal?: AbortSignal,
+): Promise<DraftListResponse> {
+  const response = await fetch(url, {
     method: "POST",
     headers: {
       Accept: "application/json",

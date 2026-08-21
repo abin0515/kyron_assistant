@@ -22,13 +22,13 @@ import type {
 } from "@/types/api";
 
 export async function createCurrentUserDraftWorkspace(): Promise<DraftWorkspace> {
-  return createDraftWorkspace(randomUUID(), getCurrentUser());
+  return createDraftWorkspace(randomUUID(), await getCurrentUser());
 }
 
 export async function getCurrentUserDraftWorkspace(
   id: string,
 ): Promise<DraftWorkspace | null> {
-  const user = getCurrentUser();
+  const user = await getCurrentUser();
 
   return getDraftWorkspaceById(id, user.id);
 }
@@ -37,7 +37,7 @@ export async function updateCurrentUserDraftWorkspace(
   id: string,
   input: UpdateDraftWorkspaceRequest,
 ): Promise<DraftWorkspace | null> {
-  const user = getCurrentUser();
+  const user = await getCurrentUser();
 
   return updateDraftWorkspace(id, user.id, input);
 }
@@ -45,7 +45,7 @@ export async function updateCurrentUserDraftWorkspace(
 export async function deleteCurrentUserDraftWorkspace(
   id: string,
 ): Promise<"deleted" | "not_found" | "not_allowed"> {
-  const user = getCurrentUser();
+  const user = await getCurrentUser();
   const workspace = await getDraftWorkspaceById(id, user.id);
 
   if (!workspace) {
@@ -67,7 +67,7 @@ export async function deleteCurrentUserDraftWorkspace(
 export async function listCurrentUserDraftWorkspaces(): Promise<
   DraftWorkspaceSummary[]
 > {
-  const user = getCurrentUser();
+  const user = await getCurrentUser();
 
   return listDraftWorkspacesByUser(user.id);
 }
@@ -75,7 +75,7 @@ export async function listCurrentUserDraftWorkspaces(): Promise<
 export async function submitCurrentUserDraftWorkspace(
   id: string,
 ): Promise<DraftWorkspace | null> {
-  const user = getCurrentUser();
+  const user = await getCurrentUser();
   const workspace = await getDraftWorkspaceById(id, user.id);
 
   if (!workspace) {

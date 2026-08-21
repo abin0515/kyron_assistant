@@ -26,8 +26,8 @@ and the last synchronized Kyron state.
 3. Run `npm run db:migrate`.
 4. Run `npm run dev`.
 
-The app currently uses the `TEST_USER_*` environment variables as a temporary
-identity. Replace this with real authentication before broader deployment.
+Clerk handles authentication. Workspace and draft records are scoped to the
+signed-in Clerk user ID.
 
 ## Project structure
 
@@ -40,6 +40,7 @@ identity. Replace this with real authentication before broader deployment.
 
 ## Main routes
 
+- `/sign-in`: Clerk authentication
 - `/drafts`: workspace management and status filters
 - `/drafts/new`: create an autosaved workspace
 - `/drafts/[id]`: generate, edit, submit, and monitor a draft
@@ -47,7 +48,6 @@ identity. Replace this with real authentication before broader deployment.
 
 ## Known limitations
 
-- Authentication still uses a temporary test identity.
 - File attachment UI is hidden because normal browser uploads are blocked by
   the current Kyron storage CORS policy.
 - Folder placement, batch creation, and generated-content reads require

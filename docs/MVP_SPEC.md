@@ -33,20 +33,21 @@ keeping a human responsible for reviewing and submitting the course setup.
 - Browser polling and explicit list synchronization
 - Status filters: Editing, In progress, Complete, Needs attention
 - Preview and editor handoff
-- Temporary user-scoped workspace and draft history
+- Clerk-authenticated, user-scoped workspace and draft history
 - Clear loading, validation, empty, and error states
 
 ## Data ownership
 
 - Kyron is the source of truth for asset generation and availability.
 - Neon stores local workspaces, ownership, Kyron IDs, and last-observed status.
+- Clerk user IDs scope every workspace and draft query.
 - A Kyron `404` marks a saved draft unavailable; it does not delete local
   history.
 - Only workspace-created records appear in the management list.
 
 ## Next phase
 
-- Replace the temporary identity with Neon Auth and Microsoft sign-in.
+- Enable Microsoft sign-in in Clerk and verify multi-account data isolation.
 - Persist uploaded source files in private object storage and keep their
   metadata and workspace ownership in Neon.
 - Extract structured content from DOCX, PDF, and PPTX files.
@@ -57,7 +58,7 @@ keeping a human responsible for reviewing and submitting the course setup.
 - Transfer supported PDF/PPTX source files to Kyron when a reviewed workspace
   is submitted.
 
-Authentication is intentionally implemented before file persistence so every
+Authentication was implemented before file persistence so every
 workspace, file, and batch has a stable owner.
 
 ## Still deferred

@@ -1,27 +1,31 @@
 import "server-only";
 
+import { currentUser } from "@clerk/nextjs/server";
+
 export type CurrentUser = {
   id: string;
   name: string;
   email: string;
 };
 
-let currentUser: CurrentUser | undefined;
+export async function getCurrentUser(): Promise<CurrentUser> {
+  const clerkUser = await currentUser();
 
-export function getCurrentUser(): CurrentUser {
-  if (currentUser) {
-    return currentUser;
+  if (!clerkUser) {
+    throw new Error("No authenticated user was found.");
   }
 
-  const id = process.env.TEST_USER_ID?.trim();
-  const name = process.env.TEST_USER_NAME?.trim();
-  const email = process.env.TEST_USER_EMAIL?.trim();
+  const email =
+    clerkUser.primaryEmailAddress?.emailAddress ??
+    clerkUser.emailAddresses[0]?.emailAddress;
 
-  if (!id || !name || !email) {
-    throw new Error("The temporary test user is not configured.");
+  if (!email) {
+    throw new Error("The authenticated user does not have an email address.");
   }
 
-  currentUser = { id, name, email };
-
-  return currentUser;
+  return {
+    id: clerkUser.id,
+    name: clerkUser.fullName ?? clerkUser.username ?? email,
+    email,
+  };
 }

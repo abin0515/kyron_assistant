@@ -8,7 +8,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -19,7 +19,9 @@ import {
 } from "@/components/ui/card";
 import {
   listDrafts,
+  POLLING_INTERVAL_MS,
   syncDrafts,
+  syncGeneratingDrafts,
 } from "@/features/drafts/kyron-drafts/api";
 import {
   DraftStatusBadge,
@@ -50,6 +52,8 @@ type DraftFilter =
   | "complete"
   | "attention";
 
+type DraftLoadMode = "stored" | "sync-generating" | "sync-all";
+
 const DRAFT_FILTERS: { label: string; value: DraftFilter }[] = [
   { label: "All", value: "all" },
   { label: "Editing", value: "editing" },
@@ -68,34 +72,53 @@ export function WorkspaceList() {
   const filteredRecords = records.filter((record) =>
     matchesFilter(record.status, activeFilter),
   );
+  const hasGeneratingDrafts = records.some(
+    (record) => record.status === "generating",
+  );
 
   useEffect(() => {
     const controller = new AbortController();
 
-    void loadRecords(controller.signal, false)
-      .then(setRecords)
-      .catch((error: unknown) => {
+    async function loadInitialRecords() {
+      try {
+        const storedRecords = await loadRecords(
+          controller.signal,
+          "stored",
+        );
+
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        setRecords(storedRecords);
+
+        if (hasGeneratingRecords(storedRecords)) {
+          const synchronizedRecords = await loadRecords(
+            controller.signal,
+            "sync-generating",
+          );
+
+          if (!controller.signal.aborted) {
+            setRecords(synchronizedRecords);
+          }
+        }
+      } catch (error) {
         if (!controller.signal.aborted) {
           setErrorMessage(messageFromError(error));
         }
-      })
-      .finally(() => {
+      } finally {
         if (!controller.signal.aborted) {
           setLoading(false);
         }
-      });
+      }
+    }
+
+    void loadInitialRecords();
 
     return () => controller.abort();
   }, []);
 
-  useEffect(
-    () => () => {
-      refreshControllerRef.current?.abort();
-    },
-    [],
-  );
-
-  async function handleRefresh() {
+  const synchronizeRecords = useCallback(async (mode: DraftLoadMode) => {
     refreshControllerRef.current?.abort();
     const controller = new AbortController();
     refreshControllerRef.current = controller;
@@ -103,7 +126,7 @@ export function WorkspaceList() {
     setLoading(true);
 
     try {
-      const nextRecords = await loadRecords(controller.signal, true);
+      const nextRecords = await loadRecords(controller.signal, mode);
 
       if (!controller.signal.aborted) {
         setRecords(nextRecords);
@@ -118,6 +141,29 @@ export function WorkspaceList() {
         setLoading(false);
       }
     }
+  }, []);
+
+  useEffect(() => {
+    if (loading || !hasGeneratingDrafts) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      void synchronizeRecords("sync-generating");
+    }, POLLING_INTERVAL_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [hasGeneratingDrafts, loading, synchronizeRecords]);
+
+  useEffect(
+    () => () => {
+      refreshControllerRef.current?.abort();
+    },
+    [],
+  );
+
+  function handleRefresh() {
+    void synchronizeRecords("sync-all");
   }
 
   return (
@@ -244,11 +290,11 @@ function DraftStatusFilters({
 
 async function loadRecords(
   signal: AbortSignal,
-  synchronize: boolean,
+  mode: DraftLoadMode,
 ): Promise<DraftRecord[]> {
   const [workspaceResponse, draftResponse] = await Promise.all([
     listDraftWorkspaces(signal),
-    synchronize ? syncDrafts(signal) : listDrafts(signal),
+    loadDrafts(mode, signal),
   ]);
   const draftsById = new Map(
     draftResponse.drafts.map((draft) => [draft.id, draft]),
@@ -265,6 +311,22 @@ async function loadRecords(
       workspace,
     };
   });
+}
+
+function loadDrafts(mode: DraftLoadMode, signal: AbortSignal) {
+  if (mode === "sync-all") {
+    return syncDrafts(signal);
+  }
+
+  if (mode === "sync-generating") {
+    return syncGeneratingDrafts(signal);
+  }
+
+  return listDrafts(signal);
+}
+
+function hasGeneratingRecords(records: DraftRecord[]): boolean {
+  return records.some((record) => record.status === "generating");
 }
 
 function WorkspaceRecords({

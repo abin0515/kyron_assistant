@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { syncCurrentUserDrafts } from "@/server/drafts/kyron-drafts/service";
+import {
+  syncCurrentUserDrafts,
+  syncCurrentUserGeneratingDrafts,
+} from "@/server/drafts/kyron-drafts/service";
 import {
   kyronErrorResponse,
   noStoreHeaders,
@@ -30,8 +33,17 @@ export async function POST(request: NextRequest) {
     return requestErrorResponse("Request origin is not allowed.", 403);
   }
 
+  const scope = request.nextUrl.searchParams.get("scope");
+
+  if (scope && scope !== "generating") {
+    return requestErrorResponse("Draft synchronization scope is invalid.");
+  }
+
   try {
-    const drafts = await syncCurrentUserDrafts();
+    const drafts =
+      scope === "generating"
+        ? await syncCurrentUserGeneratingDrafts()
+        : await syncCurrentUserDrafts();
     const response = { drafts } satisfies DraftListResponse;
 
     return NextResponse.json(response, {
