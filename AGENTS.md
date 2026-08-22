@@ -25,6 +25,16 @@ Build an internal Kyron Course Draft Launcher for the Stevens CPE team.
 - Do not use undocumented Kyron internal APIs in the MVP.
 - Do not implement publishing or deletion without explicit user confirmation.
 
+### Type placement
+
+- Define a type in the file that uses it when it is not shared elsewhere.
+- Put types shared by a server module's repository and service in that module's
+  `types.ts` file.
+- Put request and response types shared across the browser/server boundary in
+  `types/api.ts`.
+- Put UI-only view and interaction types in the relevant `features/...`
+  module.
+
 ## Required reading
 
 Before planning or implementing, read:

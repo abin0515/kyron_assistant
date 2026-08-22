@@ -19,6 +19,9 @@ Only workspace-created drafts appear in the management list. Kyron remains the
 source of truth for generation status; Neon stores workspace data, ownership,
 and the last synchronized Kyron state.
 
+The Source Library stores private PDF, PPTX, and DOCX files in Vercel Blob and
+owner-scoped metadata in Neon. Files linked to workspaces cannot be deleted.
+
 ## Local setup
 
 1. Copy `.env.example` to `.env.local` and add the required values.
@@ -44,12 +47,13 @@ signed-in Clerk user ID.
 - `/drafts`: workspace management and status filters
 - `/drafts/new`: create an autosaved workspace
 - `/drafts/[id]`: generate, edit, submit, and monitor a draft
+- `/sources`: upload and manage reusable source files
 - `/design-preview`: static fake-data UI reference; it is not a real workflow
 
 ## Known limitations
 
-- File attachment UI is hidden because normal browser uploads are blocked by
-  the current Kyron storage CORS policy.
+- Workspace file selection and server-side transfer to Kyron are not yet
+  connected to the Source Library.
 - Folder placement, batch creation, and generated-content reads require
   additional Kyron API support.
 - Publishing and Kyron asset deletion are intentionally not implemented.

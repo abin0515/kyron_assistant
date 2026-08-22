@@ -62,6 +62,20 @@ metadata. Uploaded file bytes belong in private object storage, not PostgreSQL.
 - Completed records hand off to Kyron preview and editor pages.
 - Submitted workspaces are locked against further local editing.
 
+### 6. Source Library
+
+- Private PDF, PPTX, and DOCX files upload directly to Vercel Blob through
+  short-lived, owner-authorized upload tokens.
+- The browser then calls `POST /api/source-files/complete`; the server verifies
+  Blob metadata, finalizes Neon synchronously, and returns the real list item.
+- The Blob completion webhook calls the same idempotent finalizer as a fallback
+  when the browser leaves before acknowledgement.
+- Neon stores owner-scoped metadata and workspace relationships.
+- `/sources` lists, searches, filters, and sorts saved files.
+- Usage details identify linked workspaces.
+- Guarded deletion rejects linked files and removes unreferenced records and
+  Blob objects.
+
 ## Data model
 
 ### `draft_workspaces`
@@ -136,7 +150,7 @@ Kyron public upload workflow accepts only PDF and PPTX.
 ## Next milestones
 
 1. Enable Microsoft sign-in in Clerk and verify owner-scoped data isolation.
-2. Add private source-file persistence and database metadata.
+2. Connect Source Library files to draft workspaces.
 3. Extract structured DOCX, PDF, and PPTX content.
 4. Generate and persist AI course setup recommendations from files.
 5. Add batch workspace creation on the shared ingestion workflow.

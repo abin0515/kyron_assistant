@@ -143,6 +143,48 @@ export type DraftWorkspaceListResponse = {
   workspaces: DraftWorkspaceSummary[];
 };
 
+export type SourceFileType = "pdf" | "pptx" | "docx";
+
+export type SourceFileListItem = {
+  id: string;
+  name: string;
+  size: number;
+  type: SourceFileType;
+  workspaceCount: number;
+  uploadedAt: string;
+  updatedAt: string;
+};
+
+export type SourceFileListResponse = {
+  files: SourceFileListItem[];
+};
+
+export type SourceFileUsageItem = {
+  workspaceId: string;
+  workspaceTitle: string;
+  purpose: "ai_input" | "kyron_attachment";
+  linkedAt: string;
+};
+
+export type SourceFileUsageResponse = {
+  usages: SourceFileUsageItem[];
+};
+
+export type SourceFileUploadClientPayload = {
+  uploadId: string;
+  name: string;
+  size: number;
+};
+
+export type CompleteSourceFileUploadRequest = {
+  uploadId: string;
+  blobUrl: string;
+};
+
+export type CompleteSourceFileUploadResponse = {
+  file: SourceFileListItem;
+};
+
 export type DraftListResponse = {
   drafts: ManagedDraft[];
 };

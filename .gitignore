@@ -24,3 +24,5 @@ coverage/
 
 # Generated test artifacts
 output/
+.vercel
+.env*

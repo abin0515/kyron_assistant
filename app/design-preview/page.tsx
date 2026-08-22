@@ -6,6 +6,7 @@ import {
   ChevronRight,
   CircleCheck,
   FileText,
+  FolderOpen,
   LayoutDashboard,
   Layers3,
   LoaderCircle,
@@ -31,6 +32,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { SourceLibraryConcept } from "@/features/source-library/components/source-library-concept";
 
 /**
  * Static UI reference used to align layouts before implementing real features.
@@ -40,7 +42,7 @@ export const metadata: Metadata = {
   title: "CPE Course Studio — Design preview",
 };
 
-type PreviewView = "overview" | "drafts" | "new-draft";
+type PreviewView = "overview" | "drafts" | "new-draft" | "source-library";
 
 type DesignPreviewPageProps = {
   searchParams: Promise<{ view?: string }>;
@@ -51,7 +53,11 @@ export default async function DesignPreviewPage({
 }: DesignPreviewPageProps) {
   const { view } = await searchParams;
   const activeView: PreviewView =
-    view === "drafts" || view === "new-draft" ? view : "overview";
+    view === "drafts" ||
+    view === "new-draft" ||
+    view === "source-library"
+      ? view
+      : "overview";
 
   return (
     <main className="bg-background text-foreground min-h-screen [--background:#F7F7F7] [--border:#E4E5E6] [--card:#FFFFFF] [--card-foreground:#000000] [--destructive:#A32638] [--foreground:#000000] [--input:#E4E5E6] [--muted:#E4E5E6] [--muted-foreground:#7F7F7F] [--primary:#A32638] [--primary-foreground:#FFFFFF] [--ring:#A32638] [--secondary:#FFFFFF] [--secondary-foreground:#363D45]">
@@ -66,6 +72,8 @@ export default async function DesignPreviewPage({
               <DraftsView />
             ) : activeView === "new-draft" ? (
               <NewDraftView />
+            ) : activeView === "source-library" ? (
+              <SourceLibraryConcept />
             ) : (
               <OverviewView />
             )}
@@ -122,10 +130,16 @@ function Sidebar({ activeView }: { activeView: PreviewView }) {
           label="Overview"
         />
         <SidebarLink
-          active={activeView !== "overview"}
+          active={activeView === "drafts" || activeView === "new-draft"}
           href="/design-preview?view=drafts"
           icon={<FileText aria-hidden="true" />}
           label="Drafts"
+        />
+        <SidebarLink
+          active={activeView === "source-library"}
+          href="/design-preview?view=source-library"
+          icon={<FolderOpen aria-hidden="true" />}
+          label="Source Library"
         />
         <div
           aria-disabled="true"
@@ -213,10 +227,16 @@ function MobileNavigation({ activeView }: { activeView: PreviewView }) {
           label="Overview"
         />
         <SidebarLink
-          active={activeView !== "overview"}
+          active={activeView === "drafts" || activeView === "new-draft"}
           href="/design-preview?view=drafts"
           icon={<FileText aria-hidden="true" />}
           label="Drafts"
+        />
+        <SidebarLink
+          active={activeView === "source-library"}
+          href="/design-preview?view=source-library"
+          icon={<FolderOpen aria-hidden="true" />}
+          label="Source Library"
         />
         <SidebarLink
           href="#"
@@ -904,6 +924,7 @@ const VIEW_LABELS: Record<PreviewView, string> = {
   overview: "Overview",
   drafts: "Drafts",
   "new-draft": "New draft",
+  "source-library": "Source Library",
 };
 
 function StatusBadge({ status }: { status: DraftStatus }) {

@@ -1,7 +1,7 @@
 "use client";
 
 import { UserButton, useUser } from "@clerk/nextjs";
-import { FileText, Layers3, Menu, Plus } from "lucide-react";
+import { FileText, FolderOpen, Layers3, Menu, Plus } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
@@ -43,6 +43,7 @@ function DesktopNavigation({ pathname }: { pathname: string }) {
 
       <nav aria-label="Primary navigation" className="grid gap-1 px-3">
         <DraftsLink active={pathname.startsWith("/drafts")} />
+        <SourcesLink active={pathname.startsWith("/sources")} />
         <BatchDraftsLink active={pathname.startsWith("/batches")} />
       </nav>
 
@@ -87,6 +88,7 @@ function MobileNavigation({ pathname }: { pathname: string }) {
       >
         <NewDraftLink className="mb-1 w-full justify-start" />
         <DraftsLink active={pathname.startsWith("/drafts")} />
+        <SourcesLink active={pathname.startsWith("/sources")} />
         <BatchDraftsLink active={pathname.startsWith("/batches")} />
       </nav>
     </details>
@@ -207,7 +209,29 @@ function BatchDraftsLink({ active }: { active: boolean }) {
   );
 }
 
+function SourcesLink({ active }: { active: boolean }) {
+  return (
+    <Link
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "relative flex min-h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium",
+        active
+          ? "bg-foreground text-primary-foreground before:absolute before:top-2 before:bottom-2 before:-left-3 before:w-1 before:rounded-r before:bg-primary"
+          : "text-muted-foreground hover:bg-muted hover:text-foreground",
+      )}
+      href="/sources"
+    >
+      <FolderOpen aria-hidden="true" className="size-4" />
+      Source Library
+    </Link>
+  );
+}
+
 function getPageLabel(pathname: string): string {
+  if (pathname.startsWith("/sources")) {
+    return "Source Library";
+  }
+
   if (pathname.startsWith("/batches")) {
     return "Batch drafts · Concept";
   }
