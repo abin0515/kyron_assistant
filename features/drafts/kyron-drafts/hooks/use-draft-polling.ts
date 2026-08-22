@@ -8,22 +8,12 @@ import {
   MAX_CONSECUTIVE_POLLING_FAILURES,
   POLLING_INTERVAL_MS,
 } from "@/features/drafts/kyron-drafts/api";
+import type {
+  DraftPollingPhase,
+  DraftPollingState,
+} from "@/features/drafts/kyron-drafts/types";
 import { DraftApiError } from "@/features/drafts/shared/api-response";
 import type { Draft } from "@/types/api";
-
-export type DraftPollingState = {
-  draft: Draft | null;
-  errorMessage: string | null;
-  lastCheckedAt: Date | null;
-  phase:
-    | "idle"
-    | "checking"
-    | "generating"
-    | "complete"
-    | "generation_error"
-    | "unavailable"
-    | "request_error";
-};
 
 const INITIAL_STATE: DraftPollingState = {
   draft: null,
@@ -152,7 +142,7 @@ export function useDraftPolling(draftId: number | null) {
 
 function stateFromDraft(
   draft: Draft,
-): DraftPollingState["phase"] {
+): DraftPollingPhase {
   if (draft.status === "done") {
     return "complete";
   }

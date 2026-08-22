@@ -13,11 +13,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import type { DraftPollingState } from "@/features/drafts/kyron-drafts/hooks/use-draft-polling";
-import {
-  DraftStatusBadge,
-  type DisplayDraftStatus,
-} from "@/features/drafts/shared/components/draft-status-badge";
+import type { DraftPollingState } from "@/features/drafts/kyron-drafts/types";
+import { DraftStatusBadge } from "@/features/drafts/shared/components/draft-status-badge";
+import { getPollingDraftDisplayStatus } from "@/features/drafts/shared/status";
 import { DeleteWorkspaceButton } from "@/features/drafts/workspaces/components/delete-workspace-button";
 import type { WorkspaceAutosaveState } from "@/features/drafts/workspaces/hooks/use-workspace-autosave";
 import type { DraftWorkspace } from "@/types/api";
@@ -135,7 +133,7 @@ function SubmittedDraftStatus({
   workspace: DraftWorkspace;
 }) {
   const draft = pollingState.draft;
-  const displayStatus = submittedDisplayStatus(pollingState.phase);
+  const displayStatus = getPollingDraftDisplayStatus(pollingState.phase);
 
   return (
     <Card className="sticky top-24 gap-0 rounded-xl border-border py-0 ring-1 ring-border">
@@ -242,24 +240,6 @@ function ReadinessItem({
       {children}
     </p>
   );
-}
-
-function submittedDisplayStatus(
-  phase: DraftPollingState["phase"],
-): DisplayDraftStatus {
-  if (phase === "complete") {
-    return "complete";
-  }
-
-  if (phase === "unavailable") {
-    return "not_found";
-  }
-
-  if (phase === "generation_error" || phase === "request_error") {
-    return "attention";
-  }
-
-  return "generating";
 }
 
 function statusHeading(phase: DraftPollingState["phase"]): string {

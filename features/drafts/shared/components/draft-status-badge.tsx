@@ -7,13 +7,7 @@ import {
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-
-export type DisplayDraftStatus =
-  | "editing"
-  | "generating"
-  | "complete"
-  | "attention"
-  | "not_found";
+import type { DisplayDraftStatus } from "@/features/drafts/shared/status";
 
 export function DraftStatusBadge({
   status,

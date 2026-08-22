@@ -1,15 +1,13 @@
 import "server-only";
 
 import { getDatabase } from "@/server/db/client";
+import type { StoredDraft } from "@/server/drafts/kyron-drafts/types";
 import type { CurrentUser } from "@/server/identity/current-user";
 import type {
   AssetType,
   Draft,
   KyronAvailability,
-  ManagedDraft,
 } from "@/types/api";
-
-export type StoredDraft = ManagedDraft;
 
 type DraftRow = {
   kyron_draft_id: string | number;

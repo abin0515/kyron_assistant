@@ -9,10 +9,8 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useDraftPolling } from "@/features/drafts/kyron-drafts/hooks/use-draft-polling";
 import { DraftApiError } from "@/features/drafts/shared/api-response";
-import {
-  DraftStatusBadge,
-  type DisplayDraftStatus,
-} from "@/features/drafts/shared/components/draft-status-badge";
+import { DraftStatusBadge } from "@/features/drafts/shared/components/draft-status-badge";
+import { getWorkspaceEditorDisplayStatus } from "@/features/drafts/shared/status";
 import { AutosaveStatus } from "@/features/drafts/workspaces/components/autosave-status";
 import { CourseSourceCard } from "@/features/drafts/workspaces/components/course-source-card";
 import { WorkspaceForm } from "@/features/drafts/workspaces/components/workspace-form";
@@ -173,7 +171,10 @@ export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
             </h1>
             <div className="flex flex-wrap items-center gap-3">
               <DraftStatusBadge
-                status={headerStatus(workspace, polling.state.phase)}
+                status={getWorkspaceEditorDisplayStatus(
+                  workspace,
+                  polling.state.phase,
+                )}
               />
               {!workspace.kyronDraftId ? (
                 <AutosaveStatus
@@ -230,29 +231,6 @@ function hasRequiredCourseSetup(workspace: DraftWorkspace): boolean {
     workspace.learningObjective,
     workspace.audience,
   ].every((value) => value.trim().length > 0);
-}
-
-function headerStatus(
-  workspace: DraftWorkspace,
-  pollingPhase: ReturnType<typeof useDraftPolling>["state"]["phase"],
-): DisplayDraftStatus {
-  if (pollingPhase === "unavailable") {
-    return "not_found";
-  }
-
-  if (workspace.status === "error") {
-    return "attention";
-  }
-
-  if (pollingPhase === "complete") {
-    return "complete";
-  }
-
-  if (["generation_error", "request_error"].includes(pollingPhase)) {
-    return "attention";
-  }
-
-  return workspace.kyronDraftId ? "generating" : "editing";
 }
 
 function LoadingState() {

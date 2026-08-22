@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { generateCourseSetup } from "@/server/drafts/generate-course-setup";
+import { generateCourseSetup } from "@/server/drafts/course-setup/service";
 import {
   internalErrorResponse,
   noStoreHeaders,

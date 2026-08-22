@@ -5,8 +5,8 @@ import {
   markDraftAvailabilityUnknown,
   markDraftUnavailable,
   saveDraft,
-  type StoredDraft,
 } from "@/server/drafts/kyron-drafts/repository";
+import type { StoredDraft } from "@/server/drafts/kyron-drafts/types";
 import { getCurrentUser } from "@/server/identity/current-user";
 import {
   createKyronLessonCollection,
