@@ -41,7 +41,7 @@ export async function DELETE(
 
     if (result.status === "in_use") {
       return conflictErrorResponse(
-        "Remove this source file from its draft workspaces before deleting it.",
+        "Remove this source file from its active draft workspaces before deleting it.",
         false,
       );
     }

@@ -172,6 +172,7 @@ export function SourceLibrary() {
         ...file,
         usages: response.usages.map((usage) => ({
           purpose: usage.purpose,
+          state: usage.state,
           workspaceId: usage.workspaceId,
           workspaceTitle: usage.workspaceTitle,
         })),

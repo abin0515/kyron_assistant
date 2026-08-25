@@ -11,8 +11,11 @@ import type {
   SourceFileUploadSession,
   SourceFileUploadStatus,
   SourceFileUsage,
-  SourceFileUsagePurpose,
 } from "@/server/source-files/types";
+import type {
+  SourceFileUsagePurpose,
+  SourceFileUsageState,
+} from "@/types/api";
 
 type SourceFileRow = {
   id: string;
@@ -24,6 +27,8 @@ type SourceFileRow = {
   checksum_md5_base64: string | null;
   processing_status: SourceFileProcessingStatus;
   status_message: string;
+  extracted_text: string | null;
+  extracted_at: string | Date | null;
   created_by_id: string;
   record_created_at: string | Date;
   record_updated_at: string | Date;
@@ -47,6 +52,7 @@ type SourceFileUsageRow = {
   workspace_id: string;
   workspace_name: string;
   usage: SourceFileUsagePurpose;
+  state: SourceFileUsageState;
   record_created_at: string | Date;
 };
 
@@ -232,6 +238,93 @@ export async function getSourceFileByName(
   return rows[0] ? toSourceFile(rows[0]) : null;
 }
 
+export async function saveSourceFileChecksum(
+  id: string,
+  userId: string,
+  checksumMd5Base64: string,
+): Promise<SourceFile | null> {
+  const sql = getDatabase();
+  const rows = (await sql`
+    UPDATE source_files
+    SET checksum_md5_base64 = ${checksumMd5Base64}
+    WHERE id = ${id}
+      AND created_by_id = ${userId}
+    RETURNING *
+  `) as SourceFileRow[];
+
+  return rows[0] ? toSourceFile(rows[0]) : null;
+}
+
+export async function claimSourceFileForExtraction(
+  id: string,
+  userId: string,
+): Promise<SourceFile | null> {
+  const sql = getDatabase();
+  const rows = (await sql`
+    UPDATE source_files
+    SET
+      processing_status = 'processing',
+      status_message = '',
+      record_updated_at = NOW()
+    WHERE id = ${id}
+      AND created_by_id = ${userId}
+      AND (
+        processing_status IN ('uploaded', 'failed')
+        OR (
+          processing_status = 'processing'
+          AND record_updated_at < NOW() - INTERVAL '10 minutes'
+        )
+      )
+    RETURNING *
+  `) as SourceFileRow[];
+
+  return rows[0] ? toSourceFile(rows[0]) : null;
+}
+
+export async function saveSourceFileExtractedText(
+  id: string,
+  userId: string,
+  extractedText: string,
+): Promise<SourceFile | null> {
+  const sql = getDatabase();
+  const rows = (await sql`
+    UPDATE source_files
+    SET
+      processing_status = 'ready',
+      status_message = '',
+      extracted_text = ${extractedText},
+      extracted_at = NOW(),
+      record_updated_at = NOW()
+    WHERE id = ${id}
+      AND created_by_id = ${userId}
+      AND processing_status = 'processing'
+    RETURNING *
+  `) as SourceFileRow[];
+
+  return rows[0] ? toSourceFile(rows[0]) : null;
+}
+
+export async function markSourceFileExtractionFailed(
+  id: string,
+  userId: string,
+  message: string,
+): Promise<void> {
+  const sql = getDatabase();
+
+  await sql`
+    UPDATE source_files
+    SET
+      processing_status = 'failed',
+      status_message = ${message},
+      extracted_text = NULL,
+      extracted_at = NULL,
+      record_updated_at = NOW()
+    WHERE id = ${id}
+      AND created_by_id = ${userId}
+      AND processing_status = 'processing'
+  `;
+}
+
 export async function listSourceFilesByUser(
   userId: string,
 ): Promise<SourceFileSummary[]> {
@@ -268,12 +361,21 @@ export async function listSourceFileUsages(
       draft_workspaces.id AS workspace_id,
       draft_workspaces.name AS workspace_name,
       workspace_source_files.usage,
+      CASE
+        WHEN draft_workspaces.kyron_draft_id IS NULL THEN 'active'
+        WHEN drafts.kyron_draft_id IS NULL THEN 'active'
+        WHEN drafts.status = 'started'
+          AND drafts.kyron_availability <> 'unavailable' THEN 'active'
+        ELSE 'historical'
+      END AS state,
       workspace_source_files.record_created_at
     FROM workspace_source_files
     INNER JOIN source_files
       ON source_files.id = workspace_source_files.source_file_id
     INNER JOIN draft_workspaces
       ON draft_workspaces.id = workspace_source_files.workspace_id
+    LEFT JOIN drafts
+      ON drafts.kyron_draft_id = draft_workspaces.kyron_draft_id
     WHERE source_files.id = ${sourceFileId}
       AND source_files.created_by_id = ${userId}
       AND draft_workspaces.created_by_id = ${userId}
@@ -283,22 +385,52 @@ export async function listSourceFileUsages(
   return rows.map(toSourceFileUsage);
 }
 
-export async function deleteUnusedSourceFile(
+export async function deleteDeletableSourceFile(
   id: string,
   userId: string,
 ): Promise<SourceFile | null> {
   const sql = getDatabase();
-  const rows = (await sql`
-    DELETE FROM source_files
-    WHERE id = ${id}
-      AND created_by_id = ${userId}
-      AND NOT EXISTS (
-        SELECT 1
-        FROM workspace_source_files
-        WHERE workspace_source_files.source_file_id = source_files.id
-      )
-    RETURNING *
-  `) as SourceFileRow[];
+  const results = await sql.transaction([
+    sql`
+      DELETE FROM workspace_source_files
+      WHERE source_file_id = ${id}
+        AND EXISTS (
+          SELECT 1
+          FROM source_files
+          WHERE source_files.id = workspace_source_files.source_file_id
+            AND source_files.created_by_id = ${userId}
+        )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM workspace_source_files AS active_link
+          INNER JOIN draft_workspaces
+            ON draft_workspaces.id = active_link.workspace_id
+          LEFT JOIN drafts
+            ON drafts.kyron_draft_id = draft_workspaces.kyron_draft_id
+          WHERE active_link.source_file_id = ${id}
+            AND (
+              draft_workspaces.kyron_draft_id IS NULL
+              OR drafts.kyron_draft_id IS NULL
+              OR (
+                drafts.status = 'started'
+                AND drafts.kyron_availability <> 'unavailable'
+              )
+            )
+        )
+    `,
+    sql`
+      DELETE FROM source_files
+      WHERE id = ${id}
+        AND created_by_id = ${userId}
+        AND NOT EXISTS (
+          SELECT 1
+          FROM workspace_source_files
+          WHERE workspace_source_files.source_file_id = source_files.id
+        )
+      RETURNING *
+    `,
+  ]);
+  const rows = results[1] as SourceFileRow[];
 
   return rows[0] ? toSourceFile(rows[0]) : null;
 }
@@ -314,6 +446,8 @@ function toSourceFile(row: SourceFileRow): SourceFile {
     checksumMd5Base64: row.checksum_md5_base64,
     processingStatus: row.processing_status,
     statusMessage: row.status_message,
+    extractedText: row.extracted_text,
+    extractedAt: row.extracted_at ? toIsoString(row.extracted_at) : null,
     createdById: row.created_by_id,
     recordCreatedAt: toIsoString(row.record_created_at),
     recordUpdatedAt: toIsoString(row.record_updated_at),
@@ -339,6 +473,7 @@ function toSourceFileUsage(row: SourceFileUsageRow): SourceFileUsage {
     workspaceId: row.workspace_id,
     workspaceName: row.workspace_name,
     purpose: row.usage,
+    state: row.state,
     recordCreatedAt: toIsoString(row.record_created_at),
   };
 }

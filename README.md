@@ -10,6 +10,7 @@ Create workspace
 → Add source text or transcript
 → Generate and review course setup
 → Autosave changes
+→ Optionally select one PDF or PPTX attachment
 → Submit to Kyron
 → Poll generation status
 → Preview or open the editor
@@ -20,14 +21,19 @@ source of truth for generation status; Neon stores workspace data, ownership,
 and the last synchronized Kyron state.
 
 The Source Library stores private PDF, PPTX, and DOCX files in Vercel Blob and
-owner-scoped metadata in Neon. Files linked to workspaces cannot be deleted.
+owner-scoped metadata in Neon. Files can support AI analysis, and one PDF or
+PPTX can be streamed from private storage to Kyron during draft submission.
+Files linked to active workspaces cannot be deleted.
 
 ## Local setup
 
 1. Copy `.env.example` to `.env.local` and add the required values.
-2. Run `npm install`.
-3. Run `npm run db:migrate`.
-4. Run `npm run dev`.
+2. Link the project with `npx vercel link`.
+3. Run `npx vercel env pull .env.development.local --environment=development`
+   so local server code can read private Vercel Blob files through OIDC.
+4. Run `npm install`.
+5. Run `npm run db:migrate`.
+6. Run `npm run dev`.
 
 Clerk handles authentication. Workspace and draft records are scoped to the
 signed-in Clerk user ID.
@@ -52,10 +58,11 @@ signed-in Clerk user ID.
 
 ## Known limitations
 
-- Workspace file selection and server-side transfer to Kyron are not yet
-  connected to the Source Library.
-- Folder placement, batch creation, and generated-content reads require
-  additional Kyron API support.
+- DOCX files can be analyzed for AI course setup generation. PDF and PPTX files
+  can be stored but are not yet analyzed.
+- Batch creation remains a planned application workflow.
+- Folder placement and generated-content reads require additional Kyron API
+  support.
 - Publishing and Kyron asset deletion are intentionally not implemented.
 
 ## Verification

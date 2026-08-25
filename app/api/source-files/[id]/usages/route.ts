@@ -60,6 +60,7 @@ function toSourceFileUsageItem(usage: SourceFileUsage): SourceFileUsageItem {
     workspaceId: usage.workspaceId,
     workspaceTitle: usage.workspaceName,
     purpose: usage.purpose,
+    state: usage.state,
     linkedAt: usage.recordCreatedAt,
   };
 }

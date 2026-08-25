@@ -15,8 +15,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type {
   SourceFileRecord,
-  SourceFileUsagePurpose,
+  SourceFileUsage,
 } from "@/features/source-library/types";
+import type {
+  SourceFileUsagePurpose,
+  SourceFileUsageState,
+} from "@/types/api";
 
 type SourceFileUsageDialogProps = {
   file: SourceFileRecord | null;
@@ -27,7 +31,8 @@ type SourceFileUsageDialogProps = {
 export function SourceFileUsageDialog({
   file,
   onClose,
-  workspaceHref = () => "/design-preview?view=drafts",
+  workspaceHref = (workspaceId) =>
+    `/design-preview?view=new-draft&workspace=${workspaceId}`,
 }: SourceFileUsageDialogProps) {
   useEscapeKey(Boolean(file), onClose);
 
@@ -35,9 +40,7 @@ export function SourceFileUsageDialog({
     return null;
   }
 
-  const workspaceCount = new Set(
-    file.usages.map((usage) => usage.workspaceId),
-  ).size;
+  const workspaces = groupUsagesByWorkspace(file.usages);
 
   return (
     <div
@@ -82,33 +85,38 @@ export function SourceFileUsageDialog({
         <div className="p-5">
           <div className="flex items-end justify-between gap-4">
             <div>
-              <h3 className="text-sm font-bold">Linked workspaces</h3>
+              <h3 className="text-sm font-bold">Workspace usage</h3>
               <p className="text-muted-foreground mt-1 text-xs">
-                Referenced by {workspaceCount} workspace
-                {workspaceCount === 1 ? "" : "s"}.
+                Referenced by {workspaces.length} workspace
+                {workspaces.length === 1 ? "" : "s"}.
               </p>
             </div>
             <Badge variant="outline">{file.usages.length} links</Badge>
           </div>
 
           <ul className="border-border mt-4 divide-y overflow-hidden rounded-xl border">
-            {file.usages.map((usage, index) => (
+            {workspaces.map((workspace) => (
               <li
                 className="flex items-start gap-3 p-4"
-                key={`${usage.workspaceId}-${usage.purpose}-${index}`}
+                key={workspace.id}
               >
                 <Link2 aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold">{usage.workspaceTitle}</p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-semibold">{workspace.title}</p>
+                    <UsageStateBadge state={workspace.state} />
+                  </div>
                   <p className="text-muted-foreground mt-1 text-xs">
-                    {USAGE_LABELS[usage.purpose]}
+                    {workspace.purposes
+                      .map((purpose) => USAGE_LABELS[purpose])
+                      .join(" · ")}
                   </p>
                 </div>
                 <Link
                   className="text-primary shrink-0 text-xs font-semibold underline-offset-4 hover:underline"
-                  href={workspaceHref(usage.workspaceId)}
+                  href={workspaceHref(workspace.id)}
                 >
-                  View drafts
+                  View workspace
                 </Link>
               </li>
             ))}
@@ -146,10 +154,18 @@ export function DeleteSourceFileDialog({
     return null;
   }
 
-  const isBlocked = file.usages.length > 0;
-  const workspaceCount = new Set(
-    file.usages.map((usage) => usage.workspaceId),
+  const activeWorkspaceCount = new Set(
+    file.usages
+      .filter((usage) => usage.state === "active")
+      .map((usage) => usage.workspaceId),
   ).size;
+  const historicalWorkspaceCount = new Set(
+    file.usages
+      .filter((usage) => usage.state === "historical")
+      .map((usage) => usage.workspaceId),
+  ).size;
+  const isBlocked = activeWorkspaceCount > 0;
+  const hasHistoricalUsage = historicalWorkspaceCount > 0;
 
   return (
     <div
@@ -174,12 +190,14 @@ export function DeleteSourceFileDialog({
           )}
         </span>
         <h2 className="mt-4 text-lg font-bold" id="delete-source-title">
-          {isBlocked ? "This file cannot be deleted" : "Delete source file?"}
+          {deleteDialogTitle(isBlocked, hasHistoricalUsage)}
         </h2>
         <p className="text-muted-foreground mt-2 text-sm leading-relaxed">
           {isBlocked
-            ? `${file.name} is used by ${workspaceCount} workspace${workspaceCount === 1 ? "" : "s"}. Remove those references before deleting the file.`
-            : `${file.name} will be permanently removed from the Source Library.`}
+            ? `${file.name} is actively used by ${activeWorkspaceCount} workspace${activeWorkspaceCount === 1 ? "" : "s"}. Remove those active references before deleting the file.`
+            : hasHistoricalUsage
+              ? `${file.name} was previously used by ${historicalWorkspaceCount} workspace${historicalWorkspaceCount === 1 ? "" : "s"}. Deleting it will not affect existing drafts, but those workspaces cannot reuse the file.`
+              : `${file.name} will be permanently removed from the Source Library.`}
         </p>
         {errorMessage ? (
           <p className="bg-destructive/10 text-destructive mt-4 rounded-lg px-3 py-2 text-xs">
@@ -229,6 +247,63 @@ function useEscapeKey(active: boolean, onEscape: () => void) {
 }
 
 const USAGE_LABELS: Record<SourceFileUsagePurpose, string> = {
-  ai_input: "Used to generate the AI course setup",
-  kyron_attachment: "Selected as the draft source attachment",
+  ai_input: "AI course setup",
+  kyron_attachment: "Draft attachment",
 };
+
+type WorkspaceUsage = {
+  id: string;
+  purposes: SourceFileUsagePurpose[];
+  state: SourceFileUsageState;
+  title: string;
+};
+
+function groupUsagesByWorkspace(usages: SourceFileUsage[]): WorkspaceUsage[] {
+  const workspaces = new Map<string, WorkspaceUsage>();
+
+  for (const usage of usages) {
+    const current = workspaces.get(usage.workspaceId);
+
+    if (current) {
+      if (!current.purposes.includes(usage.purpose)) {
+        current.purposes.push(usage.purpose);
+      }
+      continue;
+    }
+
+    workspaces.set(usage.workspaceId, {
+      id: usage.workspaceId,
+      purposes: [usage.purpose],
+      state: usage.state,
+      title: usage.workspaceTitle,
+    });
+  }
+
+  return [...workspaces.values()];
+}
+
+function UsageStateBadge({ state }: { state: SourceFileUsageState }) {
+  const active = state === "active";
+
+  return (
+    <Badge
+      className={active ? undefined : "text-muted-foreground bg-white"}
+      variant={active ? "secondary" : "outline"}
+    >
+      {active ? "Active" : "Previously used"}
+    </Badge>
+  );
+}
+
+function deleteDialogTitle(
+  isBlocked: boolean,
+  hasHistoricalUsage: boolean,
+): string {
+  if (isBlocked) {
+    return "This file cannot be deleted";
+  }
+
+  return hasHistoricalUsage
+    ? "Delete previously used file?"
+    : "Delete source file?";
+}

@@ -93,7 +93,10 @@ export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
       return;
     }
 
-    const setup = await generator.generate(workspace.sourceText);
+    const setup = await generator.generate({
+      brief: workspace.sourceText,
+      workspaceId: workspace.id,
+    });
 
     if (setup) {
       setGenerated(true);
@@ -195,6 +198,7 @@ export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
             onGenerate={() => void handleGenerate()}
             onSourceChange={handleSourceChange}
             sourceText={workspace.sourceText}
+            workspaceId={workspace.id}
           />
           <WorkspaceForm
             disabled={locked || generator.state.phase === "generating"}

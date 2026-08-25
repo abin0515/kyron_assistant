@@ -13,9 +13,10 @@ keeping a human responsible for reviewing and submitting the course setup.
    audience, asset type, and duration with AI.
 4. Review and edit every generated field.
 5. Autosave the workspace in Neon.
-6. Submit the completed setup to Kyron.
-7. Poll Kyron and synchronize the latest status into Neon.
-8. When complete, open the Kyron preview or editor.
+6. Optionally choose one PDF or PPTX as the Kyron draft attachment.
+7. Submit the completed setup and optional attachment to Kyron.
+8. Poll Kyron and synchronize the latest status into Neon.
+9. When complete, open the Kyron preview or editor.
 
 ## Supported inputs
 
@@ -35,6 +36,7 @@ keeping a human responsible for reviewing and submitting the course setup.
 - Preview and editor handoff
 - Clerk-authenticated, user-scoped workspace and draft history
 - Private, user-scoped Source Library with upload, usage, and guarded deletion
+- Optional PDF/PPTX attachment transfer during Kyron draft creation
 - Clear loading, validation, empty, and error states
 
 ## Data ownership
@@ -67,22 +69,19 @@ keeping a human responsible for reviewing and submitting the course setup.
 - AI setup and draft submission use the same file picker, which can select an
   existing library file or upload a new one. Highlighting prior AI inputs in
   the submission picker is deferred.
-- Files linked to a workspace cannot be permanently deleted. Removing a file
-  from a workspace removes only the relationship; deleting a workspace never
-  deletes the library file.
+- Files linked to active workspaces cannot be permanently deleted. Completed,
+  failed, or unavailable drafts keep historical usage until the file is
+  deleted, but do not block deletion. Removing a file from an active workspace
+  removes only the relationship; deleting a workspace never deletes the
+  library file.
 
 ## Next phase
 
 - Enable Microsoft sign-in in Clerk and verify multi-account data isolation.
-- Connect Source Library files to draft workspaces for AI input and Kyron
-  attachment selection.
-- Extract structured content from DOCX, PDF, and PPTX files.
-- Generate and persist editable course setup recommendations from uploaded
-  files as well as pasted text.
+- Extract structured content from selected DOCX, PDF, and PPTX files and use it
+  in editable AI course setup recommendations.
 - Let a batch contain multiple independently reviewable and resumable
   workspaces.
-- Transfer supported PDF/PPTX source files to Kyron when a reviewed workspace
-  is submitted.
 
 Authentication was implemented before file persistence so every
 workspace, file, and batch has a stable owner.
@@ -93,15 +92,17 @@ workspace, file, and batch has a stable owner.
 - Reading or editing generated sections and activities
 - Publishing and Kyron asset deletion
 
-The file-signing endpoint remains available for integration testing. Workspace
-attachment selection stays hidden until Source Library relationships and the
-server-side Kyron transfer are implemented.
+The application transfers Kyron attachments from private Blob storage on the
+server so browser CORS restrictions do not expose or block the signed upload.
+The complete application flow has been manually verified by creating a Kyron
+draft with a Source Library attachment.
 
 ## Acceptance criteria
 
 - A user can leave and resume an unfinished workspace.
 - AI suggestions remain optional and editable.
 - A valid workspace creates a Kyron draft once submitted.
+- An optional selected PDF/PPTX is transferred and included in draft creation.
 - The app displays and synchronizes generation status.
 - Completed drafts expose preview and editor links.
 - Credentials remain server-side.

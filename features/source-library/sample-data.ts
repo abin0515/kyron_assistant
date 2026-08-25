@@ -14,16 +14,19 @@ const SAMPLE_SOURCE_FILES: SourceFileRecord[] = [
     usages: [
       {
         workspaceId: "workspace-phishing-lesson",
+        state: "historical",
         workspaceTitle: "Recognizing and Reporting Phishing Emails",
         purpose: "ai_input",
       },
       {
         workspaceId: "workspace-phishing-lesson",
+        state: "historical",
         workspaceTitle: "Recognizing and Reporting Phishing Emails",
         purpose: "kyron_attachment",
       },
       {
         workspaceId: "workspace-security-practice",
+        state: "active",
         workspaceTitle: "Cybersecurity Refresher Practice",
         purpose: "ai_input",
       },
@@ -39,6 +42,7 @@ const SAMPLE_SOURCE_FILES: SourceFileRecord[] = [
     usages: [
       {
         workspaceId: "workspace-faculty-orientation",
+        state: "active",
         workspaceTitle: "New Faculty Orientation",
         purpose: "ai_input",
       },
@@ -54,6 +58,7 @@ const SAMPLE_SOURCE_FILES: SourceFileRecord[] = [
     usages: [
       {
         workspaceId: "workspace-assessment-basics",
+        state: "historical",
         workspaceTitle: "Writing Effective Assessments",
         purpose: "ai_input",
       },

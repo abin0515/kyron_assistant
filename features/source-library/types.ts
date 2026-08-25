@@ -1,11 +1,14 @@
-import type { SourceFileListItem } from "@/types/api";
+import type {
+  SourceFileListItem,
+  SourceFileUsagePurpose,
+  SourceFileUsageState,
+} from "@/types/api";
 
 export type SourceFileType = "pdf" | "pptx" | "docx";
 
-export type SourceFileUsagePurpose = "ai_input" | "kyron_attachment";
-
 export type SourceFileUsage = {
   purpose: SourceFileUsagePurpose;
+  state: SourceFileUsageState;
   workspaceId: string;
   workspaceTitle: string;
 };

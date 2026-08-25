@@ -46,19 +46,21 @@ Supported files are PDF and PPTX up to 250 MB.
 
 Both browser-to-storage and server-to-server uploads were verified with a test
 PDF. Normal browsers still block the direct `PUT` because the current storage
-CORS policy does not allow the application origin. The attachment UI therefore
-remains hidden.
+CORS policy does not allow the application origin. The application therefore
+streams the selected private Blob through the server to Kyron's signed target.
+The real workspace flow—selecting a Source Library file, transferring it, and
+creating a draft with `alignment_content_signed_id`—has been manually verified.
 
 The application's source ingestion may support additional formats such as
 DOCX. That does not imply that Kyron accepts those files as attachments. A
 DOCX can be parsed for AI course setup recommendations, but it must be converted
 or omitted during Kyron submission unless Kyron confirms public DOCX support.
 
-For the planned persistent workflow, private object storage holds the file
-bytes and Neon stores only ownership, storage references, processing state, and
-extracted content. On submission, the server reads a supported file from object
-storage, uploads it to Kyron's signed target, and sends the returned `signed_id`
-with the draft creation request.
+Private object storage holds the file bytes and Neon stores ownership, storage
+references, processing state, extracted content, and a reusable MD5 checksum.
+On submission, the server reads a supported file as a stream, uploads it to
+Kyron's signed target, and sends the returned `signed_id` with the draft
+creation request.
 
 ## API gaps for future workflow
 

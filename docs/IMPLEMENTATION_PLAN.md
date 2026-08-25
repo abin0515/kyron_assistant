@@ -43,6 +43,8 @@ metadata. Uploaded file bytes belong in private object storage, not PostgreSQL.
 ### 3. Kyron submission
 
 - `POST /api/draft-workspaces/[id]/submit` validates the saved workspace.
+- An optional linked PDF/PPTX is read from private Blob storage, checksummed,
+  streamed to Kyron's signed target, and referenced by `signed_id`.
 - The server creates the Kyron asset and requires successful Neon persistence.
 - The workspace stores the returned Kyron draft ID.
 - Submission state prevents ordinary duplicate clicks and concurrent requests.
@@ -72,9 +74,12 @@ metadata. Uploaded file bytes belong in private object storage, not PostgreSQL.
   when the browser leaves before acknowledgement.
 - Neon stores owner-scoped metadata and workspace relationships.
 - `/sources` lists, searches, filters, and sorts saved files.
-- Usage details identify linked workspaces.
-- Guarded deletion rejects linked files and removes unreferenced records and
-  Blob objects.
+- Workspace pages can select, upload, and unlink multiple AI source files.
+- Workspace setup can select or upload one PDF/PPTX for Kyron submission.
+- Usage details group links by workspace and distinguish Active from Previously
+  used relationships.
+- Guarded deletion rejects active links. Historical links are removed with the
+  file record before its Blob object is deleted.
 
 ## Data model
 
@@ -109,17 +114,15 @@ type ApiErrorResponse = {
 Upstream credentials, signed URLs, raw bodies, and internal diagnostics must not
 appear in client responses or logs.
 
-## File attachment status
+## File attachment flow
 
 Kyron `POST /files`, the signed upload contract, and server-to-server delivery
-have been verified. Normal browser delivery is blocked by the storage bucket's
-current CORS policy, so the UI remains hidden.
+are implemented. Normal browser delivery is blocked by the storage bucket's
+current CORS policy, so the server streams the selected private Blob to the
+signed target before creating the draft.
 
-Future options:
-
-1. Kyron allows the application origins and direct browser `PUT` requests.
-2. The app stores private files and transfers supported files through a
-   resumable backend workflow.
+The complete workspace flow has been manually verified against Kyron with a
+real Source Library attachment.
 
 Application ingestion and Kyron attachment delivery are separate concerns.
 The app may parse DOCX, PDF, and PPTX for AI recommendations, while the current
@@ -136,7 +139,8 @@ Kyron public upload workflow accepts only PDF and PPTX.
 
 ## Source-file and batch model
 
-- One uploaded file is stored once and linked to its owning workspace.
+- One uploaded file is stored once and can be linked to multiple owner-scoped
+  workspaces.
 - Neon stores filename, MIME type, size, storage key, extraction state, and
   analysis state.
 - Extracted text and structured content are persisted so AI analysis can be
@@ -150,14 +154,13 @@ Kyron public upload workflow accepts only PDF and PPTX.
 ## Next milestones
 
 1. Enable Microsoft sign-in in Clerk and verify owner-scoped data isolation.
-2. Connect Source Library files to draft workspaces.
-3. Extract structured DOCX, PDF, and PPTX content.
-4. Generate and persist AI course setup recommendations from files.
-5. Add batch workspace creation on the shared ingestion workflow.
-6. Transfer supported source files to Kyron during submission.
-7. Add Kyron folder placement and generated-content operations when public APIs
+2. Extract structured DOCX, PDF, and PPTX content from selected workspace
+   files.
+3. Include extracted content in AI course setup recommendations.
+4. Add batch workspace creation on the shared ingestion workflow.
+5. Add Kyron folder placement and generated-content operations when public APIs
    become available.
-8. Add pagination and background synchronization before larger-scale usage.
+6. Add pagination and background synchronization before larger-scale usage.
 
 ## Deferred engineering improvements
 

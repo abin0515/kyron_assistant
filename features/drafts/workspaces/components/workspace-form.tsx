@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { WorkspaceDraftAttachment } from "@/features/drafts/workspaces/components/workspace-draft-attachment";
 import {
   COURSE_FIELD_LIMITS,
   type AssetType,
@@ -162,6 +163,11 @@ export function WorkspaceForm({
             <option value="3600">60 minutes</option>
           </select>
         </TextField>
+
+        <WorkspaceDraftAttachment
+          disabled={disabled}
+          workspaceId={workspace.id}
+        />
       </CardContent>
     </Card>
   );

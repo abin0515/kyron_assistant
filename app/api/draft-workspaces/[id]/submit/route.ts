@@ -11,12 +11,15 @@ import {
   noStoreHeaders,
   notFoundErrorResponse,
   requestErrorResponse,
+  uploadFailedErrorResponse,
   validationErrorResponse,
 } from "@/server/http/api-response";
 import { KyronClientError } from "@/server/kyron/client";
+import { KyronAttachmentTransferError } from "@/server/drafts/workspace-source-files/kyron-attachment";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 
 type SubmitDraftWorkspaceRouteContext = {
   params: Promise<{
@@ -67,6 +70,10 @@ function submissionErrorResponse(error: unknown) {
       context: "Kyron workspace submission failed",
       fallbackMessage: "The Kyron draft could not be created.",
     });
+  }
+
+  if (error instanceof KyronAttachmentTransferError) {
+    return uploadFailedErrorResponse(error.message, error.retryable);
   }
 
   return internalErrorResponse(error, {

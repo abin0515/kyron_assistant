@@ -99,6 +99,24 @@ export function conflictErrorResponse(
   });
 }
 
+export function uploadFailedErrorResponse(
+  message: string,
+  retryable = true,
+) {
+  const response = {
+    error: {
+      code: "UPLOAD_FAILED",
+      message,
+      retryable,
+    },
+  } satisfies ApiErrorResponse;
+
+  return NextResponse.json(response, {
+    status: 502,
+    headers: noStoreHeaders,
+  });
+}
+
 export function internalErrorResponse(
   error: unknown,
   {

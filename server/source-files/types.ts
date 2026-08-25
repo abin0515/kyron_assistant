@@ -1,3 +1,8 @@
+import type {
+  SourceFileUsagePurpose,
+  SourceFileUsageState,
+} from "@/types/api";
+
 export const SOURCE_FILE_CONTENT_TYPES = [
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
@@ -11,11 +16,6 @@ export const SOURCE_FILE_PROCESSING_STATUSES = [
   "failed",
 ] as const;
 
-export const SOURCE_FILE_USAGES = [
-  "ai_input",
-  "kyron_attachment",
-] as const;
-
 export const SOURCE_FILE_UPLOAD_STATUSES = [
   "pending",
   "completed",
@@ -26,8 +26,6 @@ export type SourceFileContentType =
   (typeof SOURCE_FILE_CONTENT_TYPES)[number];
 export type SourceFileProcessingStatus =
   (typeof SOURCE_FILE_PROCESSING_STATUSES)[number];
-export type SourceFileUsagePurpose =
-  (typeof SOURCE_FILE_USAGES)[number];
 export type SourceFileUploadStatus =
   (typeof SOURCE_FILE_UPLOAD_STATUSES)[number];
 
@@ -41,6 +39,8 @@ export type SourceFile = {
   checksumMd5Base64: string | null;
   processingStatus: SourceFileProcessingStatus;
   statusMessage: string;
+  extractedText: string | null;
+  extractedAt: string | null;
   createdById: string;
   recordCreatedAt: string;
   recordUpdatedAt: string;
@@ -64,6 +64,7 @@ export type SourceFileUsage = {
   workspaceId: string;
   workspaceName: string;
   purpose: SourceFileUsagePurpose;
+  state: SourceFileUsageState;
   recordCreatedAt: string;
 };
 

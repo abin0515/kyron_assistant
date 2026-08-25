@@ -5,7 +5,9 @@ import type {
   DraftWorkspaceListResponse,
   GenerateCourseSetupRequest,
   GenerateCourseSetupResponse,
+  UpdateWorkspaceSourceFilesRequest,
   UpdateDraftWorkspaceRequest,
+  WorkspaceSourceFileListResponse,
 } from "@/types/api";
 
 export async function createDraftWorkspace(
@@ -94,18 +96,57 @@ export async function listDraftWorkspaces(
   return parseJsonResponse<DraftWorkspaceListResponse>(response);
 }
 
+export async function getWorkspaceSourceFiles(
+  workspaceId: string,
+  signal?: AbortSignal,
+): Promise<WorkspaceSourceFileListResponse> {
+  const response = await fetch(
+    `/api/draft-workspaces/${workspaceId}/source-files`,
+    {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+      credentials: "same-origin",
+      signal,
+    },
+  );
+
+  return parseJsonResponse<WorkspaceSourceFileListResponse>(response);
+}
+
+export async function updateWorkspaceSourceFiles(
+  workspaceId: string,
+  input: UpdateWorkspaceSourceFilesRequest,
+  signal?: AbortSignal,
+): Promise<WorkspaceSourceFileListResponse> {
+  const response = await fetch(
+    `/api/draft-workspaces/${workspaceId}/source-files`,
+    {
+      method: "PUT",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(input),
+      cache: "no-store",
+      credentials: "same-origin",
+      signal,
+    },
+  );
+
+  return parseJsonResponse<WorkspaceSourceFileListResponse>(response);
+}
+
 export async function generateCourseSetup(
-  brief: string,
+  input: GenerateCourseSetupRequest,
   signal?: AbortSignal,
 ): Promise<CourseSetup> {
-  const requestBody = { brief } satisfies GenerateCourseSetupRequest;
   const response = await fetch("/api/drafts/generate-course-setup", {
     method: "POST",
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(requestBody),
+    body: JSON.stringify(input),
     cache: "no-store",
     credentials: "same-origin",
     signal,

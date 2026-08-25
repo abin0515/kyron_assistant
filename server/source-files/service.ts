@@ -1,10 +1,11 @@
 import "server-only";
 
-import { del, head } from "@vercel/blob";
+import { del, get, head } from "@vercel/blob";
 
 import {
+  claimSourceFileForExtraction,
   createSourceFileUploadSession,
-  deleteUnusedSourceFile,
+  deleteDeletableSourceFile,
   expirePendingSourceFileUploads,
   finalizeSourceFileUploadSession,
   getPendingSourceFileUploadByName,
@@ -13,7 +14,13 @@ import {
   getSourceFileUploadSessionById,
   listSourceFilesByUser,
   listSourceFileUsages,
+  markSourceFileExtractionFailed,
+  saveSourceFileExtractedText,
 } from "@/server/source-files/repository";
+import {
+  DocxTextValidationError,
+  extractTextFromDocx,
+} from "@/server/source-files/docx-text";
 import { getCurrentUser } from "@/server/identity/current-user";
 import type {
   CreateSourceFileUploadSessionInput,
@@ -22,6 +29,10 @@ import type {
   SourceFileUploadSession,
   SourceFileUsage,
 } from "@/server/source-files/types";
+
+const DOCX_CONTENT_TYPE =
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const MAX_DOCX_EXTRACTION_SIZE_BYTES = 50 * 1024 * 1024;
 
 export async function prepareCurrentUserSourceFileUpload({
   id,
@@ -114,6 +125,61 @@ export async function getCurrentUserSourceFile(
   return getSourceFileById(id, user.id);
 }
 
+export async function extractCurrentUserSourceFileText(
+  id: string,
+): Promise<SourceFile | null> {
+  const user = await getCurrentUser();
+  const sourceFile = await getSourceFileById(id, user.id);
+
+  if (!sourceFile) {
+    return null;
+  }
+
+  if (sourceFile.processingStatus === "ready" && sourceFile.extractedText) {
+    return sourceFile;
+  }
+
+  validateSourceFileForExtraction(sourceFile);
+
+  const claimedFile = await claimSourceFileForExtraction(id, user.id);
+
+  if (!claimedFile) {
+    const latestFile = await getSourceFileById(id, user.id);
+
+    if (latestFile?.processingStatus === "ready" && latestFile.extractedText) {
+      return latestFile;
+    }
+
+    throw new SourceFileExtractionInProgressError();
+  }
+
+  try {
+    const buffer = await downloadSourceFile(claimedFile);
+    const extractedText = await extractTextFromDocx(buffer);
+    const savedFile = await saveSourceFileExtractedText(
+      id,
+      user.id,
+      extractedText,
+    );
+
+    if (!savedFile) {
+      throw new Error("The extracted source file text could not be saved.");
+    }
+
+    return savedFile;
+  } catch (error) {
+    const message = extractionFailureMessage(error);
+
+    await markSourceFileExtractionFailed(id, user.id, message);
+
+    if (error instanceof DocxTextValidationError) {
+      throw new SourceFileExtractionValidationError(error.message);
+    }
+
+    throw error;
+  }
+}
+
 export async function listCurrentUserSourceFiles(): Promise<
   SourceFileSummary[]
 > {
@@ -147,11 +213,13 @@ export async function deleteCurrentUserSourceFileRecord(
 
   const usages = await listSourceFileUsages(id, user.id);
 
-  if (usages.length > 0) {
-    return { status: "in_use", usages };
+  const activeUsages = usages.filter((usage) => usage.state === "active");
+
+  if (activeUsages.length > 0) {
+    return { status: "in_use", usages: activeUsages };
   }
 
-  const deletedFile = await deleteUnusedSourceFile(id, user.id);
+  const deletedFile = await deleteDeletableSourceFile(id, user.id);
 
   if (deletedFile) {
     await deleteBlobAfterRecord(deletedFile);
@@ -159,7 +227,12 @@ export async function deleteCurrentUserSourceFileRecord(
 
   return deletedFile
     ? { status: "deleted", sourceFile: deletedFile }
-    : { status: "in_use", usages: await listSourceFileUsages(id, user.id) };
+    : {
+        status: "in_use",
+        usages: (await listSourceFileUsages(id, user.id)).filter(
+          (usage) => usage.state === "active",
+        ),
+      };
 }
 
 export class SourceFileNameConflictError extends Error {
@@ -196,6 +269,20 @@ export class SourceFileUploadValidationError extends Error {
   }
 }
 
+export class SourceFileExtractionValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SourceFileExtractionValidationError";
+  }
+}
+
+export class SourceFileExtractionInProgressError extends Error {
+  constructor() {
+    super("This source file is already being processed.");
+    this.name = "SourceFileExtractionInProgressError";
+  }
+}
+
 export type SourceFileDeletionResult =
   | { status: "deleted"; sourceFile: SourceFile }
   | { status: "not_found" }
@@ -210,6 +297,62 @@ async function deleteBlobAfterRecord(sourceFile: SourceFile): Promise<void> {
       errorName: error instanceof Error ? error.name : "UnknownError",
     });
   }
+}
+
+function validateSourceFileForExtraction(sourceFile: SourceFile): void {
+  if (sourceFile.processingStatus === "ready") {
+    throw new Error("The source file is ready but has no extracted text.");
+  }
+
+  if (sourceFile.contentType !== DOCX_CONTENT_TYPE) {
+    throw new SourceFileExtractionValidationError(
+      "Only DOCX files can be analyzed in this version.",
+    );
+  }
+
+  if (sourceFile.byteSize > MAX_DOCX_EXTRACTION_SIZE_BYTES) {
+    throw new SourceFileExtractionValidationError(
+      "DOCX files must be 50 MB or smaller for text extraction.",
+    );
+  }
+}
+
+async function downloadSourceFile(sourceFile: SourceFile): Promise<Buffer> {
+  const result = await get(sourceFile.blobUrl, {
+    access: "private",
+    useCache: false,
+  });
+
+  if (!result || !result.stream || result.statusCode !== 200) {
+    throw new Error("The source file Blob could not be downloaded.");
+  }
+
+  if (
+    result.blob.size !== sourceFile.byteSize ||
+    result.blob.size > MAX_DOCX_EXTRACTION_SIZE_BYTES
+  ) {
+    throw new Error("The source file Blob size does not match its record.");
+  }
+
+  if (result.blob.contentType !== sourceFile.contentType) {
+    throw new Error("The source file Blob type does not match its record.");
+  }
+
+  const arrayBuffer = await new Response(result.stream).arrayBuffer();
+
+  if (arrayBuffer.byteLength !== result.blob.size) {
+    throw new Error("The source file Blob download is incomplete.");
+  }
+
+  return Buffer.from(arrayBuffer);
+}
+
+function extractionFailureMessage(error: unknown): string {
+  if (error instanceof DocxTextValidationError) {
+    return error.message;
+  }
+
+  return "Text extraction failed. Try again.";
 }
 
 function validateUploadedBlob(

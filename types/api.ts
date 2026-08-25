@@ -24,6 +24,10 @@ export const DRAFT_WORKSPACE_STATUSES = [
   "submitted",
   "error",
 ] as const;
+export const SOURCE_FILE_USAGES = [
+  "ai_input",
+  "kyron_attachment",
+] as const;
 
 export type AssetType = (typeof ASSET_TYPES)[number];
 export type Duration = (typeof DURATIONS)[number];
@@ -33,6 +37,9 @@ export type KyronAvailability =
   (typeof KYRON_AVAILABILITIES)[number];
 export type DraftWorkspaceStatus =
   (typeof DRAFT_WORKSPACE_STATUSES)[number];
+export type SourceFileUsagePurpose =
+  (typeof SOURCE_FILE_USAGES)[number];
+export type SourceFileUsageState = "active" | "historical";
 
 export const UPLOAD_CONTENT_TYPE_BY_EXTENSION: Record<
   ".pdf" | ".pptx",
@@ -53,7 +60,8 @@ export type CourseSetup = {
 };
 
 export type GenerateCourseSetupRequest = {
-  brief: string;
+  brief?: string;
+  workspaceId?: string;
 };
 
 export type GenerateCourseSetupResponse = {
@@ -162,12 +170,27 @@ export type SourceFileListResponse = {
 export type SourceFileUsageItem = {
   workspaceId: string;
   workspaceTitle: string;
-  purpose: "ai_input" | "kyron_attachment";
+  purpose: SourceFileUsagePurpose;
+  state: SourceFileUsageState;
   linkedAt: string;
 };
 
 export type SourceFileUsageResponse = {
   usages: SourceFileUsageItem[];
+};
+
+export type WorkspaceSourceFileItem = SourceFileListItem & {
+  purpose: SourceFileUsagePurpose;
+  linkedAt: string;
+};
+
+export type WorkspaceSourceFileListResponse = {
+  files: WorkspaceSourceFileItem[];
+};
+
+export type UpdateWorkspaceSourceFilesRequest = {
+  purpose: SourceFileUsagePurpose;
+  sourceFileIds: string[];
 };
 
 export type SourceFileUploadClientPayload = {
@@ -183,6 +206,16 @@ export type CompleteSourceFileUploadRequest = {
 
 export type CompleteSourceFileUploadResponse = {
   file: SourceFileListItem;
+};
+
+export type ExtractSourceFileTextResponse = {
+  file: {
+    id: string;
+    processingStatus: "ready";
+    statusMessage: string;
+    extractedAt: string;
+    extractedCharacterCount: number;
+  };
 };
 
 export type DraftListResponse = {

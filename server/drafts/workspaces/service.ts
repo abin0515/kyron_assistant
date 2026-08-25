@@ -12,6 +12,7 @@ import {
   startDraftWorkspaceSubmission,
   updateDraftWorkspace,
 } from "@/server/drafts/workspaces/repository";
+import { uploadWorkspaceAttachmentToKyron } from "@/server/drafts/workspace-source-files/kyron-attachment";
 import { createDraftWithRequiredPersistence } from "@/server/drafts/kyron-drafts/service";
 import { getCurrentUser } from "@/server/identity/current-user";
 import type {
@@ -98,8 +99,13 @@ export async function submitCurrentUserDraftWorkspace(
   }
 
   try {
+    const alignmentContentSignedId =
+      await uploadWorkspaceAttachmentToKyron(id, user.id);
     const draft = await createDraftWithRequiredPersistence(
-      toCreateDraftRequest(submittingWorkspace),
+      toCreateDraftRequest(
+        submittingWorkspace,
+        alignmentContentSignedId,
+      ),
     );
     const submittedWorkspace = await completeDraftWorkspaceSubmission(
       id,
@@ -177,6 +183,7 @@ function requiredFieldErrors(
 
 function toCreateDraftRequest(
   workspace: DraftWorkspace,
+  alignmentContentSignedId: string | null,
 ): CreateDraftRequest {
   return {
     name: workspace.name.trim(),
@@ -185,6 +192,9 @@ function toCreateDraftRequest(
     audience: workspace.audience.trim(),
     assetType: workspace.assetType,
     duration: workspace.duration,
+    ...(alignmentContentSignedId
+      ? { alignmentContentSignedId }
+      : {}),
   };
 }
 

@@ -18,7 +18,6 @@ import {
   Settings,
   Sparkles,
   TriangleAlert,
-  Upload,
   UserRound,
 } from "lucide-react";
 
@@ -32,6 +31,8 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { WorkspaceSourceSelectorConcept } from "@/features/drafts/workspaces/components/workspace-source-selector-concept";
+import { WorkspaceDraftAttachmentConcept } from "@/features/drafts/workspaces/components/workspace-draft-attachment-concept";
 import { SourceLibraryConcept } from "@/features/source-library/components/source-library-concept";
 
 /**
@@ -45,13 +46,13 @@ export const metadata: Metadata = {
 type PreviewView = "overview" | "drafts" | "new-draft" | "source-library";
 
 type DesignPreviewPageProps = {
-  searchParams: Promise<{ view?: string }>;
+  searchParams: Promise<{ view?: string; workspace?: string }>;
 };
 
 export default async function DesignPreviewPage({
   searchParams,
 }: DesignPreviewPageProps) {
-  const { view } = await searchParams;
+  const { view, workspace } = await searchParams;
   const activeView: PreviewView =
     view === "drafts" ||
     view === "new-draft" ||
@@ -71,7 +72,10 @@ export default async function DesignPreviewPage({
             {activeView === "drafts" ? (
               <DraftsView />
             ) : activeView === "new-draft" ? (
-              <NewDraftView />
+              <NewDraftView
+                key={workspace ?? "new-workspace"}
+                workspace={getWorkspacePreview(workspace)}
+              />
             ) : activeView === "source-library" ? (
               <SourceLibraryConcept />
             ) : (
@@ -365,7 +369,7 @@ function GenerationQueue() {
   );
 }
 
-function NewDraftView() {
+function NewDraftView({ workspace }: { workspace: WorkspacePreview }) {
   return (
     <>
       <div className="grid gap-5">
@@ -385,12 +389,12 @@ function NewDraftView() {
           <div className="grid gap-1.5">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-[1.8rem] leading-tight font-bold tracking-[-0.025em]">
-                Cybersecurity awareness for new staff
+                {workspace.title}
               </h1>
-              <StatusBadge status="editing" />
+              <StatusBadge status={workspace.status} />
             </div>
             <p className="text-muted-foreground text-sm">
-              Working draft · Autosaved just now
+              {workspace.activity}
             </p>
           </div>
         </div>
@@ -414,26 +418,17 @@ function NewDraftView() {
               >
                 <Textarea
                   className="min-h-40 rounded-lg bg-white"
-                  defaultValue="Create a short cybersecurity awareness lesson for new university staff. Explain how to recognize phishing emails, verify suspicious links, and report possible attacks. The lesson should take approximately 15 minutes."
+                  defaultValue={workspace.brief}
                 />
               </PreviewField>
 
-              <div className="border-border bg-background grid gap-3 rounded-xl border border-dashed p-4">
-                <div className="flex items-start gap-3">
-                  <span className="bg-muted grid size-9 shrink-0 place-items-center rounded-lg">
-                    <Upload aria-hidden="true" className="size-4" />
-                  </span>
-                  <div className="grid gap-1">
-                    <p className="text-sm font-semibold">Optional source file</p>
-                    <p className="text-muted-foreground text-xs">
-                      PDF and PPTX upload will be added after the upload flow is finalized.
-                    </p>
-                  </div>
-                </div>
-                <Button className="w-fit" disabled type="button" variant="outline">
-                  Upload coming later
-                </Button>
-              </div>
+              <WorkspaceSourceSelectorConcept
+                deletionProtected={
+                  workspace.status === "editing" ||
+                  workspace.status === "generating"
+                }
+                initialLinkedIds={workspace.sourceFileIds}
+              />
 
               <Button
                 className="hover:bg-primary w-fit min-h-10 px-4 font-semibold"
@@ -464,25 +459,25 @@ function NewDraftView() {
               <PreviewField className="sm:col-span-2" label="Title">
                 <Input
                   className="h-10 rounded-lg bg-white"
-                  defaultValue="Cybersecurity awareness for new staff"
+                  defaultValue={workspace.title}
                 />
               </PreviewField>
               <PreviewField className="sm:col-span-2" label="Description">
                 <Textarea
                   className="min-h-28 rounded-lg bg-white"
-                  defaultValue="A practical introduction to identifying phishing attempts, evaluating suspicious messages, and reporting potential cybersecurity incidents."
+                  defaultValue={workspace.description}
                 />
               </PreviewField>
               <PreviewField className="sm:col-span-2" label="Learning objective">
                 <Textarea
                   className="min-h-28 rounded-lg bg-white"
-                  defaultValue="By the end of this lesson, learners will be able to identify common phishing indicators, verify suspicious links safely, and follow the university reporting process."
+                  defaultValue={workspace.objective}
                 />
               </PreviewField>
               <PreviewField className="sm:col-span-2" label="Audience">
                 <Input
                   className="h-10 rounded-lg bg-white"
-                  defaultValue="New university staff with limited cybersecurity training"
+                  defaultValue={workspace.audience}
                 />
               </PreviewField>
               <PreviewField label="Asset type">
@@ -499,11 +494,15 @@ function NewDraftView() {
                   <option>20 minutes</option>
                 </select>
               </PreviewField>
+
+              <WorkspaceDraftAttachmentConcept
+                disabled={workspace.status !== "editing"}
+              />
             </CardContent>
           </Card>
         </div>
 
-        <DraftReadiness />
+        <DraftReadiness workspace={workspace} />
       </div>
     </>
   );
@@ -531,38 +530,45 @@ function PreviewField({
   );
 }
 
-function DraftReadiness() {
+function DraftReadiness({ workspace }: { workspace: WorkspacePreview }) {
+  const isEditing = workspace.status === "editing";
+
   return (
     <Card className="border-border gap-0 rounded-xl py-0 ring-1 ring-border xl:sticky xl:top-24">
       <CardHeader className="border-border border-b px-5 py-4">
-        <CardTitle className="text-base font-bold">Draft readiness</CardTitle>
+        <CardTitle className="text-base font-bold">
+          {isEditing ? "Draft readiness" : "Draft status"}
+        </CardTitle>
         <p className="text-muted-foreground text-xs">
-          Check the setup before starting course generation.
+          {WORKSPACE_STATUS_COPY[workspace.status]}
         </p>
       </CardHeader>
       <CardContent className="grid gap-5 px-5 py-5">
-        <div className="grid gap-3">
-          <ReadinessItem label="Source information added" />
-          <ReadinessItem label="Course setup generated" />
-          <ReadinessItem label="Required fields complete" />
-        </div>
+        {isEditing ? (
+          <div className="grid gap-3">
+            <ReadinessItem label="Source information added" />
+            <ReadinessItem label="Course setup generated" />
+            <ReadinessItem label="Required fields complete" />
+          </div>
+        ) : null}
 
-        <div className="border-border grid gap-3 border-t pt-5">
+        <div className={`grid gap-3 ${isEditing ? "border-border border-t pt-5" : ""}`}>
           <div className="flex items-center justify-between gap-3">
             <span className="text-muted-foreground text-xs">Status</span>
-            <StatusBadge status="editing" />
+            <StatusBadge status={workspace.status} />
           </div>
           <div className="flex items-center justify-between gap-3">
-            <span className="text-muted-foreground text-xs">Last saved</span>
-            <span className="text-xs font-medium">Just now</span>
+            <span className="text-muted-foreground text-xs">Last updated</span>
+            <span className="text-xs font-medium">{workspace.updated}</span>
           </div>
         </div>
 
         <Button
           className="hover:bg-primary min-h-10 w-full font-semibold"
+          disabled={workspace.status === "generating"}
           type="button"
         >
-          Create course draft
+          {WORKSPACE_ACTION_LABELS[workspace.status]}
         </Button>
         <p className="text-muted-foreground text-center text-xs">
           This design preview does not submit any data.
@@ -912,6 +918,18 @@ function SidebarLink({ active, href, icon, label }: SidebarLinkProps) {
 
 type DraftStatus = "editing" | "generating" | "complete" | "attention";
 
+type WorkspacePreview = {
+  activity: string;
+  audience: string;
+  brief: string;
+  description: string;
+  objective: string;
+  sourceFileIds: string[];
+  status: DraftStatus;
+  title: string;
+  updated: string;
+};
+
 type DraftRecord = {
   name: string;
   owner: string;
@@ -926,6 +944,12 @@ const VIEW_LABELS: Record<PreviewView, string> = {
   "new-draft": "New draft",
   "source-library": "Source Library",
 };
+
+function getWorkspacePreview(workspaceId?: string): WorkspacePreview {
+  return workspaceId && WORKSPACE_PREVIEWS[workspaceId]
+    ? WORKSPACE_PREVIEWS[workspaceId]
+    : DEFAULT_WORKSPACE_PREVIEW;
+}
 
 function StatusBadge({ status }: { status: DraftStatus }) {
   const details = STATUS_DETAILS[status];
@@ -1113,5 +1137,78 @@ const STATUS_DETAILS: Record<
     label: "Needs attention",
     icon: <TriangleAlert aria-hidden="true" />,
     className: "border-primary bg-white text-primary",
+  },
+};
+
+const WORKSPACE_STATUS_COPY: Record<DraftStatus, string> = {
+  editing: "Check the setup before starting course generation.",
+  generating: "Course draft generation is currently in progress.",
+  complete: "The course draft was generated successfully.",
+  attention: "The generated draft needs review in the editor.",
+};
+
+const WORKSPACE_ACTION_LABELS: Record<DraftStatus, string> = {
+  editing: "Create course draft",
+  generating: "Generation in progress",
+  complete: "Preview draft",
+  attention: "Open editor",
+};
+
+const DEFAULT_WORKSPACE_PREVIEW: WorkspacePreview = {
+  activity: "Working draft · Autosaved just now",
+  audience: "New university staff with limited cybersecurity training",
+  brief:
+    "Create a short cybersecurity awareness lesson for new university staff. Explain how to recognize phishing emails, verify suspicious links, and report possible attacks. The lesson should take approximately 15 minutes.",
+  description:
+    "A practical introduction to identifying phishing attempts, evaluating suspicious messages, and reporting potential cybersecurity incidents.",
+  objective:
+    "By the end of this lesson, learners will be able to identify common phishing indicators, verify suspicious links safely, and follow the university reporting process.",
+  sourceFileIds: ["source-cybersecurity-handbook"],
+  status: "editing",
+  title: "Cybersecurity awareness for new staff",
+  updated: "Just now",
+};
+
+const WORKSPACE_PREVIEWS: Record<string, WorkspacePreview> = {
+  "workspace-phishing-lesson": {
+    ...DEFAULT_WORKSPACE_PREVIEW,
+    activity: "Course draft completed · Updated yesterday",
+    status: "complete",
+    title: "Recognizing and Reporting Phishing Emails",
+    updated: "Yesterday",
+  },
+  "workspace-security-practice": {
+    ...DEFAULT_WORKSPACE_PREVIEW,
+    activity: "Working draft · Autosaved 12 minutes ago",
+    title: "Cybersecurity Refresher Practice",
+    updated: "12 minutes ago",
+  },
+  "workspace-faculty-orientation": {
+    activity: "Course generation started · Updated 8 minutes ago",
+    audience: "New faculty preparing to teach online courses",
+    brief:
+      "Create a faculty orientation lesson from the onboarding slides, focusing on course preparation, student communication, and available support.",
+    description:
+      "An orientation to the essential tools, expectations, and support available to new online faculty.",
+    objective:
+      "Faculty will be able to prepare their course, communicate with learners, and locate instructional support resources.",
+    sourceFileIds: ["source-faculty-onboarding"],
+    status: "generating",
+    title: "New Faculty Orientation",
+    updated: "8 minutes ago",
+  },
+  "workspace-assessment-basics": {
+    activity: "Generation needs attention · Updated 2 days ago",
+    audience: "Faculty designing assessments for online courses",
+    brief:
+      "Create a practical lesson that helps faculty write measurable objectives and design assessments that align with those objectives.",
+    description:
+      "A practical guide to aligning learning objectives, assessment methods, and feedback.",
+    objective:
+      "Faculty will be able to write measurable objectives and select aligned assessment methods.",
+    sourceFileIds: ["source-assessment-guidelines"],
+    status: "attention",
+    title: "Writing Effective Assessments",
+    updated: "2 days ago",
   },
 };

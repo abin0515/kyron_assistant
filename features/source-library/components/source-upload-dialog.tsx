@@ -21,8 +21,10 @@ import type {
 import type { SourceFileListItem } from "@/types/api";
 
 const MAX_FILE_SIZE = 250 * 1_048_576;
+const DEFAULT_ALLOWED_TYPES: SourceFileType[] = ["pdf", "pptx", "docx"];
 
 type SourceUploadDialogProps = {
+  allowedTypes?: SourceFileType[];
   existingNames: string[];
   open: boolean;
   onClose: () => void;
@@ -41,6 +43,7 @@ type QueuedFile = {
 };
 
 export function SourceUploadDialog({
+  allowedTypes = DEFAULT_ALLOWED_TYPES,
   existingNames,
   open,
   onClose,
@@ -76,6 +79,7 @@ export function SourceUploadDialog({
   const uploadableFiles = queue.filter(
     (item) => !item.error && item.status !== "uploaded",
   );
+  const allowedTypeLabel = formatAllowedTypes(allowedTypes);
 
   function handleFiles(files: File[]) {
     setQueue((current) => {
@@ -83,7 +87,7 @@ export function SourceUploadDialog({
       const namesToCheck = [...existingNames, ...queuedNames];
 
       const additions = files.map((file, index) => {
-        const error = validateFile(file, namesToCheck);
+        const error = validateFile(file, namesToCheck, allowedTypes);
         namesToCheck.push(file.name);
 
         return {
@@ -241,7 +245,9 @@ export function SourceUploadDialog({
               <span className="bg-muted mx-auto grid size-10 place-items-center rounded-lg">
                 <Upload aria-hidden="true" className="size-5" />
               </span>
-              <p className="mt-3 text-sm font-bold">Drop PDF, PPTX, or DOCX files here</p>
+              <p className="mt-3 text-sm font-bold">
+                Drop {allowedTypeLabel} files here
+              </p>
               <p className="text-muted-foreground mt-1 text-xs">
                 Up to 250 MB each. File names must be unique.
               </p>
@@ -256,7 +262,7 @@ export function SourceUploadDialog({
                 Choose files
               </Button>
               <input
-                accept=".pdf,.pptx,.docx"
+                accept={allowedTypes.map((type) => `.${type}`).join(",")}
                 className="sr-only"
                 disabled={uploading}
                 multiple
@@ -391,9 +397,15 @@ function UploadProgress({ percentage }: { percentage: number }) {
   );
 }
 
-function validateFile(file: File, existingNames: string[]): string | null {
-  if (!getSourceFileType(file.name)) {
-    return "Unsupported file type. Choose a PDF, PPTX, or DOCX file.";
+function validateFile(
+  file: File,
+  existingNames: string[],
+  allowedTypes: SourceFileType[],
+): string | null {
+  const fileType = getSourceFileType(file.name);
+
+  if (!fileType || !allowedTypes.includes(fileType)) {
+    return `Unsupported file type. Choose ${formatAllowedTypes(allowedTypes)}.`;
   }
 
   if (file.size === 0) {
@@ -409,6 +421,20 @@ function validateFile(file: File, existingNames: string[]): string | null {
   }
 
   return null;
+}
+
+function formatAllowedTypes(allowedTypes: SourceFileType[]): string {
+  const labels = allowedTypes.map((type) => type.toUpperCase());
+
+  if (labels.length === 1) {
+    return labels[0];
+  }
+
+  if (labels.length === 2) {
+    return `${labels[0]} or ${labels[1]}`;
+  }
+
+  return `${labels.slice(0, -1).join(", ")}, or ${labels.at(-1)}`;
 }
 
 function isExistingName(fileName: string, existingNames: string[]): boolean {

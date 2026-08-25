@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { generateCourseSetup } from "@/features/drafts/workspaces/api";
-import type { CourseSetup } from "@/types/api";
+import type { CourseSetup, GenerateCourseSetupRequest } from "@/types/api";
 
 export type CourseSetupGeneratorState = {
   errorMessage: string | null;
@@ -17,14 +17,16 @@ export function useCourseSetupGenerator() {
     phase: "idle",
   });
 
-  async function generate(brief: string): Promise<CourseSetup | null> {
+  async function generate(
+    input: GenerateCourseSetupRequest,
+  ): Promise<CourseSetup | null> {
     controllerRef.current?.abort();
     const controller = new AbortController();
     controllerRef.current = controller;
     setState({ errorMessage: null, phase: "generating" });
 
     try {
-      const setup = await generateCourseSetup(brief, controller.signal);
+      const setup = await generateCourseSetup(input, controller.signal);
 
       if (!controller.signal.aborted) {
         setState({ errorMessage: null, phase: "generated" });

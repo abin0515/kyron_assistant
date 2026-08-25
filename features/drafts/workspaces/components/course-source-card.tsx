@@ -1,4 +1,5 @@
 import { LoaderCircle, Sparkles } from "lucide-react";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -8,6 +9,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import { WorkspaceSourceFiles } from "@/features/drafts/workspaces/components/workspace-source-files";
 import type { CourseSetupGeneratorState } from "@/features/drafts/workspaces/hooks/use-course-setup-generator";
 import { COURSE_BRIEF_MAX_LENGTH } from "@/types/api";
 
@@ -17,14 +19,18 @@ export function CourseSourceCard({
   onGenerate,
   onSourceChange,
   sourceText,
+  workspaceId,
 }: {
   disabled: boolean;
   generatorState: CourseSetupGeneratorState;
   onGenerate: () => void;
   onSourceChange: (value: string) => void;
   sourceText: string;
+  workspaceId: string;
 }) {
   const generating = generatorState.phase === "generating";
+  const [hasAiSourceFiles, setHasAiSourceFiles] = useState(false);
+  const hasSourceInformation = Boolean(sourceText.trim()) || hasAiSourceFiles;
 
   return (
     <Card className="gap-0 rounded-xl border-border py-0 ring-1 ring-border">
@@ -33,7 +39,7 @@ export function CourseSourceCard({
           1. Add source information
         </CardTitle>
         <p className="text-xs text-muted-foreground">
-          Describe the course or paste source material for the AI assistant.
+          Add a brief, transcript, or source files for the AI assistant.
         </p>
       </CardHeader>
       <CardContent className="grid gap-5 px-5 py-5">
@@ -54,9 +60,15 @@ export function CourseSourceCard({
           </span>
         </label>
 
+        <WorkspaceSourceFiles
+          disabled={disabled || generating}
+          onAiSourceFilesChange={setHasAiSourceFiles}
+          workspaceId={workspaceId}
+        />
+
         <Button
           className="min-h-10 w-fit px-4 font-semibold"
-          disabled={disabled || generating || !sourceText.trim()}
+          disabled={disabled || generating || !hasSourceInformation}
           onClick={onGenerate}
           type="button"
         >
