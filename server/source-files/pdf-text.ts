@@ -1,11 +1,13 @@
 import "server-only";
 
-import "pdfjs-dist/legacy/build/pdf.worker.mjs";
-import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
-
 import { SourceTextValidationError } from "@/server/source-files/source-text-error";
 
+type PdfJsModule = typeof import("pdfjs-dist/legacy/build/pdf.mjs");
+
+let pdfJsPromise: Promise<PdfJsModule> | null = null;
+
 export async function extractTextFromPdf(buffer: Buffer): Promise<string> {
+  const { getDocument } = await loadPdfJs();
   const loadingTask = getDocument({
     data: new Uint8Array(buffer),
     useSystemFonts: true,
@@ -36,6 +38,32 @@ export async function extractTextFromPdf(buffer: Buffer): Promise<string> {
     );
   } finally {
     await loadingTask.destroy();
+  }
+}
+
+async function loadPdfJs(): Promise<PdfJsModule> {
+  pdfJsPromise ??= initializePdfJs();
+
+  return pdfJsPromise;
+}
+
+async function initializePdfJs(): Promise<PdfJsModule> {
+  const canvas = await import("@napi-rs/canvas");
+
+  installCanvasGlobal("DOMMatrix", canvas.DOMMatrix);
+  installCanvasGlobal("Path2D", canvas.Path2D);
+  installCanvasGlobal("ImageData", canvas.ImageData);
+
+  return import("pdfjs-dist/legacy/build/pdf.mjs");
+}
+
+function installCanvasGlobal(name: string, value: unknown): void {
+  if (!(name in globalThis)) {
+    Object.defineProperty(globalThis, name, {
+      configurable: true,
+      value,
+      writable: true,
+    });
   }
 }
 
