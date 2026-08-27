@@ -218,6 +218,57 @@ export type ExtractSourceFileTextResponse = {
   };
 };
 
+export type BatchWorkspaceStatus =
+  | "setup_pending"
+  | "setup_generating"
+  | "setup_error"
+  | "needs_review"
+  | "ready"
+  | "submitting"
+  | "generating"
+  | "complete"
+  | "kyron_error";
+
+export type BatchWorkspaceItem = {
+  id: string;
+  sourceFile: Pick<SourceFileListItem, "id" | "name" | "size" | "type">;
+  status: BatchWorkspaceStatus;
+  statusMessage: string;
+  setup: CourseSetup;
+  attachToKyron: boolean;
+  kyronDraftId: number | null;
+  updatedAt: string;
+};
+
+export type DraftBatch = {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  workspaces: BatchWorkspaceItem[];
+};
+
+export type DraftBatchListResponse = {
+  batches: DraftBatch[];
+};
+
+export type DraftBatchResponse = {
+  batch: DraftBatch;
+};
+
+export type CreateDraftBatchRequest = {
+  name: string;
+  sourceFileIds: string[];
+};
+
+export type GenerateDraftBatchRequest = {
+  workspaceIds?: string[];
+};
+
+export type ReviewBatchWorkspaceRequest = CourseSetup & {
+  attachToKyron: boolean;
+};
+
 export type DraftListResponse = {
   drafts: ManagedDraft[];
 };

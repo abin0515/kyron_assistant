@@ -1,6 +1,9 @@
 import "server-only";
 
 import { getDatabase } from "@/server/db/client";
+import type {
+  DeleteDraftWorkspaceResult,
+} from "@/server/drafts/workspaces/types";
 import type { CurrentUser } from "@/server/identity/current-user";
 import type {
   AssetType,
@@ -119,18 +122,54 @@ export async function updateDraftWorkspace(
 export async function deleteDraftWorkspace(
   id: string,
   userId: string,
-): Promise<boolean> {
+): Promise<DeleteDraftWorkspaceResult> {
   const sql = getDatabase();
   const rows = (await sql`
-    DELETE FROM draft_workspaces
-    WHERE id = ${id}
-      AND created_by_id = ${userId}
-      AND kyron_draft_id IS NULL
-      AND status IN ('editing', 'error')
-    RETURNING id
-  `) as Array<{ id: string }>;
+    WITH candidate AS MATERIALIZED (
+      SELECT
+        draft_workspaces.id,
+        draft_workspaces.kyron_draft_id,
+        (
+          (
+            draft_workspaces.kyron_draft_id IS NULL
+            AND draft_workspaces.status IN ('editing', 'error')
+          )
+          OR drafts.kyron_availability = 'unavailable'
+        ) AS deletable
+      FROM draft_workspaces
+      LEFT JOIN drafts
+        ON drafts.kyron_draft_id = draft_workspaces.kyron_draft_id
+        AND drafts.created_by_id = ${userId}
+      WHERE draft_workspaces.id = ${id}
+        AND draft_workspaces.created_by_id = ${userId}
+    ),
+    deleted_workspace AS (
+      DELETE FROM draft_workspaces
+      USING candidate
+      WHERE draft_workspaces.id = candidate.id
+        AND candidate.deletable
+      RETURNING draft_workspaces.kyron_draft_id
+    ),
+    deleted_draft AS (
+      DELETE FROM drafts
+      USING deleted_workspace
+      WHERE drafts.kyron_draft_id = deleted_workspace.kyron_draft_id
+        AND drafts.created_by_id = ${userId}
+      RETURNING drafts.kyron_draft_id
+    )
+    SELECT
+      CASE
+        WHEN NOT EXISTS (SELECT 1 FROM candidate) THEN 'not_found'
+        WHEN EXISTS (SELECT 1 FROM deleted_workspace) THEN 'deleted'
+        ELSE 'not_allowed'
+      END AS result,
+      (SELECT COUNT(*) FROM deleted_draft) AS deleted_draft_count
+  `) as Array<{
+    result: DeleteDraftWorkspaceResult;
+    deleted_draft_count: string | number;
+  }>;
 
-  return rows.length === 1;
+  return rows[0]?.result ?? "not_found";
 }
 
 export async function listDraftWorkspacesByUser(

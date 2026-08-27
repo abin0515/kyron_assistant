@@ -54,13 +54,15 @@ signed-in Clerk user ID.
 - `/drafts/new`: create an autosaved workspace
 - `/drafts/[id]`: generate, edit, submit, and monitor a draft
 - `/sources`: upload and manage reusable source files
+- `/batches`: create and manage one workspace per selected source file
 - `/design-preview`: static fake-data UI reference; it is not a real workflow
 
 ## Known limitations
 
-- DOCX files can be analyzed for AI course setup generation. PDF and PPTX files
-  can be stored but are not yet analyzed.
-- Batch creation remains a planned application workflow.
+- DOCX, PDF, and PPTX files up to 50 MB can be analyzed for AI course setup
+  generation. Scanned PDFs require OCR and are not supported yet.
+- Batch generation currently runs inside a request rather than a durable
+  background workflow, so the initial limit is 20 workspaces per batch.
 - Folder placement and generated-content reads require additional Kyron API
   support.
 - Publishing and Kyron asset deletion are intentionally not implemented.

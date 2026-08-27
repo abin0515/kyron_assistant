@@ -143,27 +143,49 @@ Kyron public upload workflow accepts only PDF and PPTX.
   workspaces.
 - Neon stores filename, MIME type, size, storage key, extraction state, and
   analysis state.
-- Extracted text and structured content are persisted so AI analysis can be
-  reviewed or retried without re-uploading the file.
+- Extracted text is persisted so AI analysis can be retried without downloading
+  and parsing the file again.
 - A batch groups multiple workspaces; each workspace remains independently
   editable, submittable, retryable, and synchronized.
-- For structured lesson-plan DOCX files, one document is initially treated as
-  one draft and each table row as an activity. The user must confirm the draft
-  boundary when the document is ambiguous.
+- V1 maps one selected file to one workspace. It does not infer modules,
+  activities, or multiple draft boundaries from a document.
+
+## Batch implementation
+
+- `draft_batches` owns a named group of normal `draft_workspaces`.
+- Creating a batch maps each selected Source Library file to one workspace with
+  an `ai_input` relationship.
+- The shared extraction service supports DOCX, PDF page text, and PPTX slide
+  text plus speaker notes. Extracted text is cached on the source-file record.
+- Setup generation is limited to 20 workspaces per batch and runs with two
+  concurrent workers. Workspace claims prevent duplicate generation and can be
+  reclaimed after 10 minutes if a request stops unexpectedly.
+- Each workspace stores its own setup state, message, generated fields, review
+  state, attachment choice, Kyron submission, and synchronization result.
+- This MVP starts generation from a Batch detail request; a durable queue or
+  workflow runner is deferred until usage requires generation to continue
+  independently of a web request.
 
 ## Next milestones
 
-1. Enable Microsoft sign-in in Clerk and verify owner-scoped data isolation.
-2. Extract structured DOCX, PDF, and PPTX content from selected workspace
-   files.
-3. Include extracted content in AI course setup recommendations.
-4. Add batch workspace creation on the shared ingestion workflow.
-5. Add Kyron folder placement and generated-content operations when public APIs
+1. Apply and manually verify the batch migrations and end-to-end flow with
+   representative DOCX, PDF, and PPTX files.
+2. Enable Microsoft sign-in in Clerk and verify owner-scoped data isolation.
+3. Add durable background jobs before increasing the batch limit or expected
+   processing time.
+4. Add Kyron folder placement and generated-content operations when public APIs
    become available.
-6. Add pagination and background synchronization before larger-scale usage.
+5. Add pagination and background synchronization before larger-scale usage.
 
 ## Deferred engineering improvements
 
+- Move Batch course-setup generation out of the Batch detail request and into
+  a durable background job. The current flow starts generation when the user
+  opens the detail page, so it is not guaranteed to continue after the browser
+  leaves or the request ends.
+- Add a concurrency limit to selected Kyron draft submissions. Setup generation
+  already uses two workers, but the current submission flow can send every
+  selected ready workspace concurrently.
 - Cancel the in-flight workspace creation request when `/drafts/new` unmounts,
   preventing an abandoned loading page from creating an orphaned workspace or
   triggering a late redirect.

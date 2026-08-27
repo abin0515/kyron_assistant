@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 
-import { BatchConcept } from "@/features/batches/components/batch-concept";
+import { BatchListPage } from "@/features/batches/components/batch-list-page";
 
 export const metadata: Metadata = {
-  title: "Batch drafts concept — CPE Course Studio",
+  title: "Batch drafts — CPE Course Studio",
 };
 
 export default function BatchesPage() {
-  return <BatchConcept />;
+  return <BatchListPage />;
 }

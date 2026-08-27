@@ -46,14 +46,16 @@ keeping a human responsible for reviewing and submitting the course setup.
 - Neon stores local workspaces, source-file metadata and relationships, Kyron
   IDs, and last-observed status.
 - Clerk user IDs scope every workspace and draft query.
-- A Kyron `404` marks a saved draft unavailable; it does not delete local
-  history.
+- A Kyron `404` marks a saved draft unavailable. The user may then explicitly
+  delete its local workspace and synchronization record.
 - Only workspace-created records appear in the management list.
 
 ## Source Library
 
 - Each user has a private, reusable source-file library without folders.
-- Supported ingestion formats are DOCX, PDF, and PPTX, up to 250 MB per file.
+- Supported upload formats are DOCX, PDF, and PPTX, up to 250 MB per file.
+- AI text extraction is limited to 50 MB per file in V1 to bound server memory
+  and execution time. Scanned PDFs require OCR and are not supported yet.
 - File names are unique per user, ignoring case and surrounding whitespace.
 - Each direct Blob upload uses a short-lived owner-scoped session. After the
   Blob transfer, an explicit completion request verifies the object, saves its
@@ -75,13 +77,20 @@ keeping a human responsible for reviewing and submitting the course setup.
   removes only the relationship; deleting a workspace never deletes the
   library file.
 
-## Next phase
+## Batch creation
 
-- Enable Microsoft sign-in in Clerk and verify multi-account data isolation.
-- Extract structured content from selected DOCX, PDF, and PPTX files and use it
-  in editable AI course setup recommendations.
-- Let a batch contain multiple independently reviewable and resumable
-  workspaces.
+- A user creates a batch by selecting 1–20 Source Library files.
+- Each selected file creates one normal, resumable workspace and becomes that
+  workspace's AI input.
+- DOCX, PDF, and PPTX text is extracted once and cached in Neon for reuse.
+- Course setup generation runs for two workspaces at a time. Each result or
+  error is persisted independently, so one failed file does not fail the batch.
+- Generated setups require human review before selected workspaces can be
+  submitted to Kyron.
+- PDF and PPTX sources may optionally be attached during review; DOCX is used
+  only for AI input.
+- Batch workspaces also appear in the ordinary Drafts list and continue through
+  the same submission, polling, synchronization, preview, and editor workflow.
 
 Authentication was implemented before file persistence so every
 workspace, file, and batch has a stable owner.
@@ -102,6 +111,8 @@ draft with a Source Library attachment.
 - A user can leave and resume an unfinished workspace.
 - AI suggestions remain optional and editable.
 - A valid workspace creates a Kyron draft once submitted.
+- A batch creates one independently reviewable workspace per selected file.
+- PDF, PPTX, and DOCX source text can generate editable course setup fields.
 - An optional selected PDF/PPTX is transferred and included in draft creation.
 - The app displays and synchronizes generation status.
 - Completed drafts expose preview and editor links.

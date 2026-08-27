@@ -105,7 +105,8 @@ export function DeleteWorkspaceButton({
         </p>
       ) : (
         <p className="max-w-64 text-right text-xs text-muted-foreground">
-          This permanently removes the saved setup.
+          This permanently removes the local workspace. Source Library files
+          are kept.
         </p>
       )}
     </div>

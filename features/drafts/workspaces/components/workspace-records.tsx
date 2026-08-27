@@ -20,7 +20,6 @@ import type {
   DraftFilter,
   DraftRecord,
 } from "@/features/drafts/workspaces/types";
-import type { DraftWorkspaceSummary } from "@/types/api";
 
 export function WorkspaceRecords({
   errorMessage,
@@ -206,7 +205,7 @@ function RecordActions({
       >
         {status === "editing" ? "Continue" : "View details"}
       </Link>
-      {canDeleteWorkspace(workspace) ? (
+      {canDeleteWorkspace(record) ? (
         <DeleteWorkspaceButton
           onDeleted={() => onDeleted(workspace.id)}
           workspaceId={workspace.id}
@@ -216,10 +215,13 @@ function RecordActions({
   );
 }
 
-function canDeleteWorkspace(workspace: DraftWorkspaceSummary): boolean {
+function canDeleteWorkspace(record: DraftRecord): boolean {
+  const { draft, workspace } = record;
+
   return (
-    !workspace.kyronDraftId &&
-    (workspace.status === "editing" || workspace.status === "error")
+    (!workspace.kyronDraftId &&
+      (workspace.status === "editing" || workspace.status === "error")) ||
+    draft?.kyronAvailability === "unavailable"
   );
 }
 

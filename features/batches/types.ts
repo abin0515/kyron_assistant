@@ -1,36 +1,28 @@
-export type BatchDraftStatus =
-  | "processing"
-  | "ready"
-  | "needs_review"
-  | "error"
-  | "submitting"
-  | "generating"
-  | "complete";
+import type {
+  BatchWorkspaceItem,
+  BatchWorkspaceStatus,
+  CourseSetup,
+  DraftBatch,
+  SourceFileListItem,
+} from "@/types/api";
 
 export type BatchFilter =
   | "all"
+  | "pending"
   | "ready"
   | "needs_review"
   | "active"
   | "complete"
   | "error";
 
-export type BatchAssetType = "lesson" | "practice" | "scenario";
+export type BatchOverallStatus = "active" | "attention" | "complete";
 
-export type BatchCourseSetup = {
-  title: string;
-  description: string;
-  learningObjective: string;
-  audience: string;
-  assetType: BatchAssetType;
-  duration: 480 | 900 | 1800 | 3600;
-};
-
-export type BatchDraftItem = {
-  id: string;
-  fileName: string;
-  fileSize: number;
-  status: BatchDraftStatus;
-  statusMessage: string;
-  setup: BatchCourseSetup;
-};
+export type BatchDraftStatus = BatchWorkspaceStatus;
+export type BatchDraftItem = BatchWorkspaceItem;
+export type BatchRecord = DraftBatch;
+export type BatchCourseSetup = CourseSetup;
+export type BatchSourceFile = Pick<
+  SourceFileListItem,
+  "id" | "name" | "size" | "type"
+>;
+export type BatchSourceFileType = SourceFileListItem["type"];

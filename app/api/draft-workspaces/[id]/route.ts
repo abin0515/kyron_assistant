@@ -136,7 +136,7 @@ export async function DELETE(
 
     if (result === "not_allowed") {
       return conflictErrorResponse(
-        "Only unsubmitted draft workspaces can be deleted.",
+        "Only unsubmitted workspaces or workspaces no longer available in Kyron can be deleted.",
         false,
       );
     }

@@ -15,7 +15,7 @@ import type {
 type BatchReviewDrawerProps = {
   item: BatchDraftItem;
   onClose: () => void;
-  onSave: (setup: BatchCourseSetup) => void;
+  onSave: (setup: BatchCourseSetup, attachToKyron: boolean) => void;
 };
 
 export function BatchReviewDrawer({
@@ -24,7 +24,9 @@ export function BatchReviewDrawer({
   onSave,
 }: BatchReviewDrawerProps) {
   const [setup, setSetup] = useState<BatchCourseSetup>(item.setup);
+  const [attachToKyron, setAttachToKyron] = useState(item.attachToKyron);
   const complete = hasRequiredFields(setup);
+  const attachmentSupported = item.sourceFile.type !== "docx";
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -60,10 +62,16 @@ export function BatchReviewDrawer({
               Course setup
             </h2>
             <p className="mt-1 truncate text-sm text-muted-foreground">
-              {item.fileName}
+              {item.sourceFile.name}
             </p>
           </div>
-          <Button aria-label="Close" onClick={onClose} size="icon" type="button" variant="ghost">
+          <Button
+            aria-label="Close"
+            onClick={onClose}
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
             <X aria-hidden="true" />
           </Button>
         </header>
@@ -71,8 +79,8 @@ export function BatchReviewDrawer({
         <div className="grid flex-1 gap-5 overflow-y-auto px-5 py-5 sm:px-6">
           <Field label="Title">
             <Input
-              onChange={(event) => updateSetup("title", event.target.value)}
-              value={setup.title}
+              onChange={(event) => updateSetup("name", event.target.value)}
+              value={setup.name}
             />
           </Field>
           <Field label="Description">
@@ -131,6 +139,29 @@ export function BatchReviewDrawer({
               </select>
             </Field>
           </div>
+
+          <section className="rounded-xl border border-border bg-muted/25 p-4">
+            <div className="flex items-start gap-3">
+              <input
+                checked={attachmentSupported && attachToKyron}
+                className="mt-0.5 size-4 accent-primary"
+                disabled={!attachmentSupported}
+                id="batch-kyron-attachment"
+                onChange={(event) => setAttachToKyron(event.target.checked)}
+                type="checkbox"
+              />
+              <label className="grid gap-1" htmlFor="batch-kyron-attachment">
+                <span className="text-sm font-semibold">
+                  Attach this source file to the external draft
+                </span>
+                <span className="text-xs leading-relaxed text-muted-foreground">
+                  {attachmentSupported
+                    ? `${item.sourceFile.name} will be transferred only when this workspace is submitted.`
+                    : "DOCX is available for AI course setup analysis but is not supported as a draft attachment."}
+                </span>
+              </label>
+            </div>
+          </section>
         </div>
 
         <footer className="border-t border-border bg-card px-5 py-4 sm:px-6">
@@ -145,7 +176,9 @@ export function BatchReviewDrawer({
             </Button>
             <Button
               disabled={!complete}
-              onClick={() => onSave(setup)}
+              onClick={() =>
+                onSave(setup, attachmentSupported && attachToKyron)
+              }
               type="button"
             >
               <Save aria-hidden="true" />
@@ -176,7 +209,7 @@ function Field({ children, label }: { children: ReactNode; label: string }) {
 
 function hasRequiredFields(setup: BatchCourseSetup): boolean {
   return Boolean(
-    setup.title.trim() &&
+    setup.name.trim() &&
       setup.description.trim() &&
       setup.learningObjective.trim() &&
       setup.audience.trim(),

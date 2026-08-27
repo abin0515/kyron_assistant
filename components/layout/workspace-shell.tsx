@@ -1,7 +1,13 @@
 "use client";
 
 import { UserButton, useUser } from "@clerk/nextjs";
-import { FileText, FolderOpen, Layers3, Menu, Plus } from "lucide-react";
+import {
+  FileText,
+  FolderOpen,
+  Layers3,
+  Menu,
+  Plus,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
@@ -195,16 +201,6 @@ function BatchDraftsLink({ active }: { active: boolean }) {
     >
       <Layers3 aria-hidden="true" className="size-4" />
       <span>Batch drafts</span>
-      <span
-        className={cn(
-          "ml-auto rounded-full border px-1.5 py-0.5 text-[0.6rem] font-bold tracking-wide uppercase",
-          active
-            ? "border-primary-foreground/30 text-primary-foreground/80"
-            : "border-border text-muted-foreground",
-        )}
-      >
-        Concept
-      </span>
     </Link>
   );
 }
@@ -233,7 +229,7 @@ function getPageLabel(pathname: string): string {
   }
 
   if (pathname.startsWith("/batches")) {
-    return "Batch drafts · Concept";
+    return "Batch drafts";
   }
 
   if (pathname === "/drafts/new") {

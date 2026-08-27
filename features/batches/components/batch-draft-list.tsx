@@ -9,6 +9,7 @@ import {
   Trash2,
   TriangleAlert,
 } from "lucide-react";
+import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -46,7 +47,7 @@ export function BatchDraftList({
           />
           <h3 className="mt-3 text-sm font-bold">No files in this view</h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            Add files or choose another status filter.
+            Choose another status filter to see the remaining workspaces.
           </p>
         </div>
       </div>
@@ -132,31 +133,38 @@ function DesktopBatchItem({
           selected={selected}
         />
       </td>
-      <td className="max-w-56 py-4 pr-4">
+      <td className="max-w-60 py-4 pr-4">
         <div className="flex min-w-0 items-center gap-3">
           <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted">
             <FileText aria-hidden="true" className="size-4" />
           </span>
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold" title={item.fileName}>
-              {item.fileName}
+            <p
+              className="truncate text-sm font-semibold"
+              title={item.sourceFile.name}
+            >
+              {item.sourceFile.name}
             </p>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              {formatFileSize(item.fileSize)}
+              {item.sourceFile.type.toUpperCase()} ·{" "}
+              {formatFileSize(item.sourceFile.size)}
             </p>
           </div>
         </div>
       </td>
       <td className="max-w-64 py-4 pr-4">
-        <p className="truncate text-sm font-medium" title={item.setup.title}>
-          {item.setup.title || "Waiting for analysis"}
+        <p className="truncate text-sm font-medium" title={item.setup.name}>
+          {item.setup.name || "Course setup not generated"}
         </p>
         <p className="mt-0.5 truncate text-xs text-muted-foreground">
           {item.setup.audience || "Audience not confirmed"}
         </p>
       </td>
       <td className="py-4 pr-4 text-sm capitalize">
-        {item.setup.assetType}
+        <p>{item.setup.assetType}</p>
+        <p className="mt-0.5 text-xs normal-case text-muted-foreground">
+          {attachmentLabel(item)}
+        </p>
       </td>
       <td className="py-4 pr-4">
         <StatusBadge status={item.status} />
@@ -189,16 +197,19 @@ function MobileBatchItem(props: BatchItemProps) {
           selected={selected}
         />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold">{item.fileName}</p>
+          <p className="truncate text-sm font-semibold">
+            {item.sourceFile.name}
+          </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            {formatFileSize(item.fileSize)} · {item.setup.assetType}
+            {item.sourceFile.type.toUpperCase()} ·{" "}
+            {formatFileSize(item.sourceFile.size)} · {attachmentLabel(item)}
           </p>
         </div>
         <StatusBadge status={item.status} />
       </div>
       <div>
         <p className="text-sm font-medium">
-          {item.setup.title || "Waiting for analysis"}
+          {item.setup.name || "Course setup not generated"}
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
           {item.statusMessage}
@@ -234,7 +245,7 @@ function SelectionCheckbox({
 
   return (
     <input
-      aria-label={`Select ${item.setup.title || item.fileName}`}
+      aria-label={`Select ${item.setup.name || item.sourceFile.name}`}
       checked={selectable && selected}
       className="mt-0.5 size-4 shrink-0 accent-primary"
       disabled={!selectable}
@@ -251,30 +262,63 @@ function ItemActions({
   onRetry,
 }: Pick<BatchItemProps, "item" | "onEdit" | "onRemove" | "onRetry">) {
   const canEdit = item.status === "ready" || item.status === "needs_review";
+  const canRetry = item.status === "setup_error";
+  const canViewDetails = [
+    "submitting",
+    "generating",
+    "complete",
+    "kyron_error",
+  ].includes(item.status);
+  const canRemove = [
+    "setup_pending",
+    "setup_error",
+    "needs_review",
+    "ready",
+  ].includes(item.status);
 
   return (
     <div className="flex justify-end gap-2">
-      {item.status === "error" ? (
-        <Button onClick={() => onRetry(item.id)} size="sm" type="button" variant="outline">
+      {canRetry ? (
+        <Button
+          onClick={() => onRetry(item.id)}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
           <RefreshCw aria-hidden="true" />
           Retry
         </Button>
       ) : null}
       {canEdit ? (
-        <Button onClick={() => onEdit(item.id)} size="sm" type="button" variant="outline">
+        <Button
+          onClick={() => onEdit(item.id)}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
           <PencilLine aria-hidden="true" />
           Review
         </Button>
       ) : null}
-      <Button
-        aria-label={`Remove ${item.fileName}`}
-        onClick={() => onRemove(item.id)}
-        size="icon-sm"
-        type="button"
-        variant="ghost"
-      >
-        <Trash2 aria-hidden="true" />
-      </Button>
+      {canViewDetails ? (
+        <Link
+          className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-background px-3 text-xs font-semibold hover:bg-muted"
+          href={`/drafts/${item.id}`}
+        >
+          View details
+        </Link>
+      ) : null}
+      {canRemove ? (
+        <Button
+          aria-label={`Remove ${item.sourceFile.name}`}
+          onClick={() => onRemove(item.id)}
+          size="icon-sm"
+          type="button"
+          variant="ghost"
+        >
+          <Trash2 aria-hidden="true" />
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -285,18 +329,33 @@ export function StatusBadge({ status }: { status: BatchDraftStatus }) {
 
   return (
     <Badge className={config.className} variant="outline">
-      <Icon aria-hidden="true" className={config.spin ? "animate-spin" : undefined} />
+      <Icon
+        aria-hidden="true"
+        className={config.spin ? "animate-spin" : undefined}
+      />
       {config.label}
     </Badge>
   );
 }
 
 const STATUS_CONFIG = {
-  processing: {
+  setup_pending: {
+    className: "border-[#C7C9CC] bg-[#F5F5F5] text-[#555B61]",
+    icon: FileText,
+    label: "Queued",
+    spin: false,
+  },
+  setup_generating: {
     className: "border-[#C7C9CC] bg-[#F5F5F5] text-[#555B61]",
     icon: LoaderCircle,
-    label: "Processing",
+    label: "Generating setup",
     spin: true,
+  },
+  setup_error: {
+    className: "border-[#E2A7AF] bg-[#FFF4F5] text-[#A32638]",
+    icon: TriangleAlert,
+    label: "Setup failed",
+    spin: false,
   },
   ready: {
     className: "border-[#9BC7B0] bg-[#F0FAF4] text-[#23653F]",
@@ -310,28 +369,28 @@ const STATUS_CONFIG = {
     label: "Needs review",
     spin: false,
   },
-  error: {
-    className: "border-[#E2A7AF] bg-[#FFF4F5] text-[#A32638]",
-    icon: TriangleAlert,
-    label: "Error",
-    spin: false,
-  },
   submitting: {
     className: "border-[#B7ACD9] bg-[#F6F3FF] text-[#59458E]",
-    icon: LoaderCircle,
-    label: "Submitting",
-    spin: true,
+    icon: CircleCheck,
+    label: "Submitted",
+    spin: false,
   },
   generating: {
     className: "border-[#9DBFD0] bg-[#F0F8FC] text-[#295F79]",
     icon: LoaderCircle,
-    label: "Generating",
+    label: "Generating in Kyron",
     spin: true,
   },
   complete: {
     className: "border-[#9BC7B0] bg-[#F0FAF4] text-[#23653F]",
     icon: CircleCheck,
     label: "Complete",
+    spin: false,
+  },
+  kyron_error: {
+    className: "border-[#E2A7AF] bg-[#FFF4F5] text-[#A32638]",
+    icon: TriangleAlert,
+    label: "Needs attention",
     spin: false,
   },
 } satisfies Record<
@@ -350,4 +409,12 @@ function formatFileSize(bytes: number): string {
   }
 
   return `${(bytes / 1_000_000).toFixed(1)} MB`;
+}
+
+function attachmentLabel(item: BatchDraftItem): string {
+  if (item.sourceFile.type === "docx") {
+    return "AI only";
+  }
+
+  return item.attachToKyron ? "Attachment selected" : "No attachment";
 }

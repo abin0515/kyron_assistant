@@ -47,6 +47,7 @@ export function WorkspaceStatusPanel({
     return (
       <SubmittedDraftStatus
         onCheckNow={onCheckNow}
+        onDeleted={onDeleted}
         pollingState={pollingState}
         workspace={workspace}
       />
@@ -59,7 +60,7 @@ export function WorkspaceStatusPanel({
   const canSubmit = ready && saved && !submissionBusy;
 
   return (
-    <Card className="sticky top-24 gap-0 rounded-xl border-border py-0 ring-1 ring-border">
+    <Card className="sticky top-24 min-w-0 gap-0 rounded-xl border-border py-0 ring-1 ring-border">
       <CardHeader className="flex flex-row items-center justify-between border-b border-border px-5 py-4">
         <CardTitle className="text-base font-light">Draft readiness</CardTitle>
         <DraftStatusBadge
@@ -125,10 +126,12 @@ export function WorkspaceStatusPanel({
 
 function SubmittedDraftStatus({
   onCheckNow,
+  onDeleted,
   pollingState,
   workspace,
 }: {
   onCheckNow: () => void;
+  onDeleted: () => void;
   pollingState: DraftPollingState;
   workspace: DraftWorkspace;
 }) {
@@ -136,7 +139,7 @@ function SubmittedDraftStatus({
   const displayStatus = getPollingDraftDisplayStatus(pollingState.phase);
 
   return (
-    <Card className="sticky top-24 gap-0 rounded-xl border-border py-0 ring-1 ring-border">
+    <Card className="sticky top-24 min-w-0 gap-0 rounded-xl border-border py-0 ring-1 ring-border">
       <CardHeader className="flex flex-row items-center justify-between border-b border-border px-5 py-4">
         <CardTitle className="text-base font-light">Draft status</CardTitle>
         <DraftStatusBadge status={displayStatus} />
@@ -146,7 +149,7 @@ function SubmittedDraftStatus({
           <h2 className="text-lg font-bold">
             {statusHeading(pollingState.phase)}
           </h2>
-          <p className="text-sm leading-relaxed text-muted-foreground">
+          <p className="max-h-40 overflow-y-auto text-sm leading-relaxed break-words whitespace-pre-wrap text-muted-foreground [overflow-wrap:anywhere]">
             {statusMessage(pollingState, workspace)}
           </p>
         </div>
@@ -155,7 +158,7 @@ function SubmittedDraftStatus({
         (pollingState.phase === "complete" ||
           pollingState.phase === "generation_error") ? (
           <div className="grid gap-3">
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+            <div className="grid gap-2">
               <a
                 className={buttonVariants({
                   className: "min-h-10",
@@ -215,6 +218,16 @@ function SubmittedDraftStatus({
             </p>
           ) : null}
         </div>
+
+        {pollingState.phase === "unavailable" ? (
+          <div className="flex justify-end border-t border-border pt-4">
+            <DeleteWorkspaceButton
+              label="Delete workspace"
+              onDeleted={onDeleted}
+              workspaceId={workspace.id}
+            />
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );

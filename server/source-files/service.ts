@@ -18,9 +18,9 @@ import {
   saveSourceFileExtractedText,
 } from "@/server/source-files/repository";
 import {
-  DocxTextValidationError,
-  extractTextFromDocx,
-} from "@/server/source-files/docx-text";
+  extractTextFromSourceFile,
+  SourceTextValidationError,
+} from "@/server/source-files/source-text";
 import { getCurrentUser } from "@/server/identity/current-user";
 import type {
   CreateSourceFileUploadSessionInput,
@@ -30,9 +30,7 @@ import type {
   SourceFileUsage,
 } from "@/server/source-files/types";
 
-const DOCX_CONTENT_TYPE =
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-const MAX_DOCX_EXTRACTION_SIZE_BYTES = 50 * 1024 * 1024;
+const MAX_SOURCE_EXTRACTION_SIZE_BYTES = 50 * 1024 * 1024;
 
 export async function prepareCurrentUserSourceFileUpload({
   id,
@@ -155,7 +153,10 @@ export async function extractCurrentUserSourceFileText(
 
   try {
     const buffer = await downloadSourceFile(claimedFile);
-    const extractedText = await extractTextFromDocx(buffer);
+    const extractedText = await extractTextFromSourceFile(
+      claimedFile.contentType,
+      buffer,
+    );
     const savedFile = await saveSourceFileExtractedText(
       id,
       user.id,
@@ -172,7 +173,7 @@ export async function extractCurrentUserSourceFileText(
 
     await markSourceFileExtractionFailed(id, user.id, message);
 
-    if (error instanceof DocxTextValidationError) {
+    if (error instanceof SourceTextValidationError) {
       throw new SourceFileExtractionValidationError(error.message);
     }
 
@@ -304,15 +305,9 @@ function validateSourceFileForExtraction(sourceFile: SourceFile): void {
     throw new Error("The source file is ready but has no extracted text.");
   }
 
-  if (sourceFile.contentType !== DOCX_CONTENT_TYPE) {
+  if (sourceFile.byteSize > MAX_SOURCE_EXTRACTION_SIZE_BYTES) {
     throw new SourceFileExtractionValidationError(
-      "Only DOCX files can be analyzed in this version.",
-    );
-  }
-
-  if (sourceFile.byteSize > MAX_DOCX_EXTRACTION_SIZE_BYTES) {
-    throw new SourceFileExtractionValidationError(
-      "DOCX files must be 50 MB or smaller for text extraction.",
+      "Source files must be 50 MB or smaller for text extraction.",
     );
   }
 }
@@ -329,7 +324,7 @@ async function downloadSourceFile(sourceFile: SourceFile): Promise<Buffer> {
 
   if (
     result.blob.size !== sourceFile.byteSize ||
-    result.blob.size > MAX_DOCX_EXTRACTION_SIZE_BYTES
+    result.blob.size > MAX_SOURCE_EXTRACTION_SIZE_BYTES
   ) {
     throw new Error("The source file Blob size does not match its record.");
   }
@@ -348,7 +343,7 @@ async function downloadSourceFile(sourceFile: SourceFile): Promise<Buffer> {
 }
 
 function extractionFailureMessage(error: unknown): string {
-  if (error instanceof DocxTextValidationError) {
+  if (error instanceof SourceTextValidationError) {
     return error.message;
   }
 

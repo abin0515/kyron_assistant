@@ -351,6 +351,28 @@ export async function listSourceFilesByUser(
   return rows.map(toSourceFileSummary);
 }
 
+export async function getSourceFilesByIds(
+  ids: string[],
+  userId: string,
+): Promise<SourceFile[]> {
+  if (ids.length === 0) {
+    return [];
+  }
+
+  const sql = getDatabase();
+  const rows = (await sql.query(
+    `
+      SELECT *
+      FROM source_files
+      WHERE created_by_id = $1
+        AND id = ANY($2::UUID[])
+    `,
+    [userId, ids],
+  )) as SourceFileRow[];
+
+  return rows.map(toSourceFile);
+}
+
 export async function listSourceFileUsages(
   sourceFileId: string,
   userId: string,

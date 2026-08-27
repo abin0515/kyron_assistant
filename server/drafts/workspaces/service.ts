@@ -12,6 +12,9 @@ import {
   startDraftWorkspaceSubmission,
   updateDraftWorkspace,
 } from "@/server/drafts/workspaces/repository";
+import type {
+  DeleteDraftWorkspaceResult,
+} from "@/server/drafts/workspaces/types";
 import { uploadWorkspaceAttachmentToKyron } from "@/server/drafts/workspace-source-files/kyron-attachment";
 import { createDraftWithRequiredPersistence } from "@/server/drafts/kyron-drafts/service";
 import { getCurrentUser } from "@/server/identity/current-user";
@@ -45,24 +48,10 @@ export async function updateCurrentUserDraftWorkspace(
 
 export async function deleteCurrentUserDraftWorkspace(
   id: string,
-): Promise<"deleted" | "not_found" | "not_allowed"> {
+): Promise<DeleteDraftWorkspaceResult> {
   const user = await getCurrentUser();
-  const workspace = await getDraftWorkspaceById(id, user.id);
 
-  if (!workspace) {
-    return "not_found";
-  }
-
-  if (
-    workspace.kyronDraftId ||
-    !["editing", "error"].includes(workspace.status)
-  ) {
-    return "not_allowed";
-  }
-
-  const deleted = await deleteDraftWorkspace(id, user.id);
-
-  return deleted ? "deleted" : "not_allowed";
+  return deleteDraftWorkspace(id, user.id);
 }
 
 export async function listCurrentUserDraftWorkspaces(): Promise<
