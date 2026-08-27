@@ -1,6 +1,5 @@
 import type {
   SourceFileRecord,
-  SourceFileType,
 } from "@/features/source-library/types";
 
 const SAMPLE_SOURCE_FILES: SourceFileRecord[] = [
@@ -89,12 +88,4 @@ export function createSampleSourceFiles(): SourceFileRecord[] {
     ...file,
     usages: file.usages.map((usage) => ({ ...usage })),
   }));
-}
-
-export function getSourceFileType(fileName: string): SourceFileType | null {
-  const extension = fileName.split(".").pop()?.toLowerCase();
-
-  return extension === "pdf" || extension === "pptx" || extension === "docx"
-    ? extension
-    : null;
 }

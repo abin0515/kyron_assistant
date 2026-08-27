@@ -171,6 +171,13 @@ export async function extractCurrentUserSourceFileText(
   } catch (error) {
     const message = extractionFailureMessage(error);
 
+    console.error("Source file text extraction failed", {
+      sourceFileId: id,
+      contentType: sourceFile.contentType,
+      errorName: error instanceof Error ? error.name : "UnknownError",
+      errorMessage: error instanceof Error ? error.message : "Unknown error",
+    });
+
     await markSourceFileExtractionFailed(id, user.id, message);
 
     if (error instanceof SourceTextValidationError) {

@@ -33,12 +33,36 @@ export async function extractTextFromPdf(buffer: Buffer): Promise<string> {
       throw error;
     }
 
-    throw new SourceTextValidationError(
-      "The PDF file could not be opened. It may be damaged or password protected.",
-    );
+    const validationMessage = getPdfValidationMessage(error);
+
+    if (validationMessage) {
+      throw new SourceTextValidationError(validationMessage);
+    }
+
+    throw error;
   } finally {
     await loadingTask.destroy();
   }
+}
+
+function getPdfValidationMessage(error: unknown): string | null {
+  if (!(error instanceof Error)) {
+    return null;
+  }
+
+  if (error.name === "PasswordException") {
+    return "The PDF is password protected and cannot be analyzed.";
+  }
+
+  if (
+    error.name === "InvalidPDFException" ||
+    error.name === "MissingPDFException" ||
+    error.name === "UnexpectedResponseException"
+  ) {
+    return "The PDF file could not be opened. It may be damaged.";
+  }
+
+  return null;
 }
 
 async function loadPdfJs(): Promise<PdfJsModule> {

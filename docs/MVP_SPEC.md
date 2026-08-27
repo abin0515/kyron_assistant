@@ -52,11 +52,16 @@ keeping a human responsible for reviewing and submitting the course setup.
 
 ## Source Library
 
-- Each user has a private, reusable source-file library without folders.
+- Each user has a private, reusable source-file library without persisted
+  folders. The folder picker can add supported files from a local folder in
+  one queue; files remain flat in the library after upload.
 - Supported upload formats are DOCX, PDF, and PPTX, up to 250 MB per file.
 - AI text extraction is limited to 50 MB per file in V1 to bound server memory
   and execution time. Scanned PDFs require OCR and are not supported yet.
 - File names are unique per user, ignoring case and surrounding whitespace.
+  Folder selection reports hidden and unsupported files, and blocks the full
+  queue when a selected name conflicts with another selected file or an
+  existing library file.
 - Each direct Blob upload uses a short-lived owner-scoped session. After the
   Blob transfer, an explicit completion request verifies the object, saves its
   metadata to Neon, and returns the list record; the Blob webhook provides an

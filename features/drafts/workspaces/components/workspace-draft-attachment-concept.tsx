@@ -14,10 +14,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SourceUploadDialog } from "@/features/source-library/components/source-upload-dialog";
-import {
-  createSampleSourceFiles,
-  getSourceFileType,
-} from "@/features/source-library/sample-data";
+import { getSourceFileType } from "@/features/source-library/file-type";
+import { createSampleSourceFiles } from "@/features/source-library/sample-data";
 import type { SourceFileRecord } from "@/features/source-library/types";
 import type { SourceFileListItem } from "@/types/api";
 

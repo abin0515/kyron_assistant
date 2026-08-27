@@ -297,6 +297,7 @@ export function SourceLibrary() {
       </section>
 
       <SourceUploadDialog
+        allowFolderSelection
         existingNames={files.map((file) => file.name)}
         onClose={() => setUploadOpen(false)}
         onOpenExisting={(fileName) => {
