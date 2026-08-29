@@ -10,7 +10,6 @@ import {
   updateWorkspaceSourceFiles,
 } from "@/features/drafts/workspaces/api";
 import { WorkspaceSourceFilePicker } from "@/features/drafts/workspaces/components/workspace-source-file-picker";
-import { listSourceFiles } from "@/features/source-library/api";
 import { SourceUploadDialog } from "@/features/source-library/components/source-upload-dialog";
 import type {
   SourceFileListItem,
@@ -36,7 +35,6 @@ export function WorkspaceSourceFiles({
   const [linkedFiles, setLinkedFiles] = useState<WorkspaceSourceFileItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [pendingIds, setPendingIds] = useState<string[]>([]);
-  const [pickerLoading, setPickerLoading] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -69,20 +67,10 @@ export function WorkspaceSourceFiles({
     onAiSourceFilesChange(aiFiles.length > 0);
   }, [aiFiles.length, onAiSourceFilesChange]);
 
-  async function openPicker() {
+  function openPicker() {
     setErrorMessage(null);
     setPendingIds(aiFiles.map((file) => file.id));
     setDialogView("picker");
-    setPickerLoading(true);
-
-    try {
-      const response = await listSourceFiles();
-      setAvailableFiles(response.files);
-    } catch (error) {
-      setErrorMessage(messageFromError(error));
-    } finally {
-      setPickerLoading(false);
-    }
   }
 
   async function saveSelection(sourceFileIds: string[]) {
@@ -131,7 +119,7 @@ export function WorkspaceSourceFiles({
           <Button
             className="w-fit"
             disabled={loading}
-            onClick={() => void openPicker()}
+            onClick={openPicker}
             type="button"
             variant="outline"
           >
@@ -205,10 +193,10 @@ export function WorkspaceSourceFiles({
         <WorkspaceSourceFilePicker
           busy={busy}
           errorMessage={errorMessage}
-          files={availableFiles}
-          loading={pickerLoading}
+          initialFiles={availableFiles}
           onApply={() => void saveSelection(pendingIds)}
           onClose={() => setDialogView("closed")}
+          onFilesChange={setAvailableFiles}
           onSelectedIdsChange={setPendingIds}
           onUpload={() => setDialogView("upload")}
           selectedIds={pendingIds}

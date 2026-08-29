@@ -1,11 +1,18 @@
 import "server-only";
 
 import { getDatabase } from "@/server/db/client";
+import {
+  pageOffset,
+  type PageRequest,
+  type PageResult,
+} from "@/server/http/pagination";
 import type {
   CreateSourceFileInput,
   CreateSourceFileUploadSessionInput,
   SourceFile,
   SourceFileContentType,
+  SourceFileLibrarySummary,
+  SourceFileListFilter,
   SourceFileProcessingStatus,
   SourceFileSummary,
   SourceFileUploadSession,
@@ -54,6 +61,11 @@ type SourceFileUsageRow = {
   usage: SourceFileUsagePurpose;
   state: SourceFileUsageState;
   record_created_at: string | Date;
+};
+
+type SourceFileLibrarySummaryRow = {
+  total_bytes: string | number;
+  linked_files: string | number;
 };
 
 type SourceFileUploadSessionRow = {
@@ -327,9 +339,26 @@ export async function markSourceFileExtractionFailed(
 
 export async function listSourceFilesByUser(
   userId: string,
-): Promise<SourceFileSummary[]> {
+  page: PageRequest,
+  filter: SourceFileListFilter,
+): Promise<PageResult<SourceFileSummary>> {
   const sql = getDatabase();
-  const rows = (await sql`
+  const offset = pageOffset(page);
+  const counts = (await sql.query(
+    `
+    SELECT COUNT(*) AS total_count
+    FROM source_files
+    WHERE created_by_id = $1
+      AND ($2 = '' OR original_name ILIKE '%' || $2 || '%')
+      AND (
+        CARDINALITY($3::TEXT[]) = 0
+        OR content_type = ANY($3::TEXT[])
+      )
+    `,
+    [userId, filter.query, filter.contentTypes],
+  )) as Array<{ total_count: string | number }>;
+  const rows = (await sql.query(
+    `
     SELECT
       source_files.id,
       source_files.original_name,
@@ -343,12 +372,48 @@ export async function listSourceFilesByUser(
     FROM source_files
     LEFT JOIN workspace_source_files
       ON workspace_source_files.source_file_id = source_files.id
-    WHERE source_files.created_by_id = ${userId}
+    WHERE source_files.created_by_id = $1
+      AND ($2 = '' OR source_files.original_name ILIKE '%' || $2 || '%')
+      AND (
+        CARDINALITY($3::TEXT[]) = 0
+        OR source_files.content_type = ANY($3::TEXT[])
+      )
     GROUP BY source_files.id
     ORDER BY source_files.record_created_at DESC
-  `) as SourceFileSummaryRow[];
+    LIMIT $4
+    OFFSET $5
+    `,
+    [userId, filter.query, filter.contentTypes, page.pageSize, offset],
+  )) as SourceFileSummaryRow[];
 
-  return rows.map(toSourceFileSummary);
+  return {
+    items: rows.map(toSourceFileSummary),
+    totalCount: Number(counts[0]?.total_count ?? 0),
+  };
+}
+
+export async function summarizeSourceFilesByUser(
+  userId: string,
+): Promise<SourceFileLibrarySummary> {
+  const sql = getDatabase();
+  const rows = (await sql`
+    SELECT
+      COALESCE(SUM(source_files.byte_size), 0) AS total_bytes,
+      COUNT(*) FILTER (
+        WHERE EXISTS (
+          SELECT 1
+          FROM workspace_source_files
+          WHERE workspace_source_files.source_file_id = source_files.id
+        )
+      ) AS linked_files
+    FROM source_files
+    WHERE source_files.created_by_id = ${userId}
+  `) as SourceFileLibrarySummaryRow[];
+
+  return {
+    totalBytes: Number(rows[0]?.total_bytes ?? 0),
+    linkedFiles: Number(rows[0]?.linked_files ?? 0),
+  };
 }
 
 export async function getSourceFilesByIds(

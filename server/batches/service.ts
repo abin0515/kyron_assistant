@@ -15,6 +15,10 @@ import {
 import type {
   DeleteDraftBatchResult,
 } from "@/server/batches/types";
+import type {
+  PageRequest,
+  PageResult,
+} from "@/server/http/pagination";
 import { generateCourseSetup } from "@/server/drafts/course-setup/service";
 import { updateCurrentWorkspaceSourceFiles } from "@/server/drafts/workspace-source-files/service";
 import { updateDraftWorkspace } from "@/server/drafts/workspaces/repository";
@@ -83,10 +87,12 @@ export async function createCurrentUserBatch(
   return batch;
 }
 
-export async function listCurrentUserBatches(): Promise<DraftBatch[]> {
+export async function listCurrentUserBatches(
+  page: PageRequest,
+): Promise<PageResult<DraftBatch>> {
   const user = await getCurrentUser();
 
-  return listBatchesByUser(user.id);
+  return listBatchesByUser(user.id, page);
 }
 
 export async function getCurrentUserBatch(

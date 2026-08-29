@@ -16,7 +16,6 @@ import {
   updateWorkspaceSourceFiles,
 } from "@/features/drafts/workspaces/api";
 import { WorkspaceSourceFilePicker } from "@/features/drafts/workspaces/components/workspace-source-file-picker";
-import { listSourceFiles } from "@/features/source-library/api";
 import { SourceUploadDialog } from "@/features/source-library/components/source-upload-dialog";
 import type {
   SourceFileListItem,
@@ -37,7 +36,6 @@ export function WorkspaceDraftAttachment({
   const [dialogView, setDialogView] = useState<DialogView>("closed");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [linkedFiles, setLinkedFiles] = useState<WorkspaceSourceFileItem[]>([]);
-  const [pickerLoading, setPickerLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [pendingIds, setPendingIds] = useState<string[]>([]);
 
@@ -72,20 +70,10 @@ export function WorkspaceDraftAttachment({
     [availableFiles],
   );
 
-  async function openPicker() {
+  function openPicker() {
     setErrorMessage(null);
     setPendingIds(attachment ? [attachment.id] : []);
     setDialogView("picker");
-    setPickerLoading(true);
-
-    try {
-      const response = await listSourceFiles();
-      setAvailableFiles(response.files);
-    } catch (error) {
-      setErrorMessage(messageFromError(error));
-    } finally {
-      setPickerLoading(false);
-    }
   }
 
   async function saveSelection(sourceFileIds: string[]) {
@@ -131,7 +119,7 @@ export function WorkspaceDraftAttachment({
           <Button
             className="w-fit"
             disabled={loading}
-            onClick={() => void openPicker()}
+            onClick={openPicker}
             type="button"
             variant="outline"
           >
@@ -198,14 +186,15 @@ export function WorkspaceDraftAttachment({
           busy={busy}
           emptyDescription="Only PDF and PPTX files can be attached. DOCX files remain available for AI course setup analysis."
           errorMessage={errorMessage}
-          files={attachmentFiles}
-          loading={pickerLoading}
+          initialFiles={attachmentFiles}
           onApply={() => void saveSelection(pendingIds)}
           onClose={() => setDialogView("closed")}
+          onFilesChange={setAvailableFiles}
           onSelectedIdsChange={setPendingIds}
           onUpload={() => setDialogView("upload")}
           selectedIds={pendingIds}
           selectionMode="single"
+          types={["pdf", "pptx"]}
         />
       ) : null}
       {dialogView === "upload" ? (

@@ -1,6 +1,11 @@
 import "server-only";
 
 import { getDatabase } from "@/server/db/client";
+import {
+  pageOffset,
+  type PageRequest,
+  type PageResult,
+} from "@/server/http/pagination";
 import type {
   DeleteDraftWorkspaceResult,
 } from "@/server/drafts/workspaces/types";
@@ -174,8 +179,15 @@ export async function deleteDraftWorkspace(
 
 export async function listDraftWorkspacesByUser(
   userId: string,
-): Promise<DraftWorkspaceSummary[]> {
+  page: PageRequest,
+): Promise<PageResult<DraftWorkspaceSummary>> {
   const sql = getDatabase();
+  const offset = pageOffset(page);
+  const counts = (await sql`
+    SELECT COUNT(*) AS total_count
+    FROM draft_workspaces
+    WHERE created_by_id = ${userId}
+  `) as Array<{ total_count: string | number }>;
   const rows = (await sql`
     SELECT
       id,
@@ -191,10 +203,14 @@ export async function listDraftWorkspacesByUser(
     FROM draft_workspaces
     WHERE created_by_id = ${userId}
     ORDER BY record_updated_at DESC
-    LIMIT 50
+    LIMIT ${page.pageSize}
+    OFFSET ${offset}
   `) as DraftWorkspaceSummaryRow[];
 
-  return rows.map(toDraftWorkspaceSummary);
+  return {
+    items: rows.map(toDraftWorkspaceSummary),
+    totalCount: Number(counts[0]?.total_count ?? 0),
+  };
 }
 
 export async function startDraftWorkspaceSubmission(

@@ -9,15 +9,23 @@ import {
   noStoreHeaders,
   requestErrorResponse,
 } from "@/server/http/api-response";
+import {
+  paginationMeta,
+  parsePageRequest,
+} from "@/server/http/pagination";
 import type { DraftWorkspaceListResponse } from "@/types/api";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const workspaces = await listCurrentUserDraftWorkspaces();
-    const response = { workspaces } satisfies DraftWorkspaceListResponse;
+    const page = parsePageRequest(request.nextUrl.searchParams);
+    const result = await listCurrentUserDraftWorkspaces(page);
+    const response = {
+      workspaces: result.items,
+      pagination: paginationMeta(page, result.totalCount),
+    } satisfies DraftWorkspaceListResponse;
 
     return NextResponse.json(response, {
       headers: noStoreHeaders,

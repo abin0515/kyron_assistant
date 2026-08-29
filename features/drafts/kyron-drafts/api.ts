@@ -21,9 +21,38 @@ export async function getDraft(
 }
 
 export async function listDrafts(
+  page = 1,
   signal?: AbortSignal,
 ): Promise<DraftListResponse> {
-  const response = await fetch("/api/drafts", {
+  const response = await fetch(`/api/drafts?page=${page}`, {
+    headers: {
+      Accept: "application/json",
+    },
+    cache: "no-store",
+    credentials: "same-origin",
+    signal,
+  });
+
+  return parseJsonResponse<DraftListResponse>(response);
+}
+
+export async function listDraftsByIds(
+  ids: number[],
+  signal?: AbortSignal,
+): Promise<DraftListResponse> {
+  if (ids.length === 0) {
+    return {
+      drafts: [],
+      pagination: {
+        page: 1,
+        perPage: 0,
+        totalCount: 0,
+        totalPages: 0,
+      },
+    };
+  }
+
+  const response = await fetch(`/api/drafts?ids=${ids.join(",")}`, {
     headers: {
       Accept: "application/json",
     },
@@ -36,15 +65,20 @@ export async function listDrafts(
 }
 
 export async function syncDrafts(
+  page = 1,
   signal?: AbortSignal,
 ): Promise<DraftListResponse> {
-  return requestDraftSync("/api/drafts/sync", signal);
+  return requestDraftSync(`/api/drafts/sync?page=${page}`, signal);
 }
 
 export async function syncGeneratingDrafts(
+  page = 1,
   signal?: AbortSignal,
 ): Promise<DraftListResponse> {
-  return requestDraftSync("/api/drafts/sync?scope=generating", signal);
+  return requestDraftSync(
+    `/api/drafts/sync?scope=generating&page=${page}`,
+    signal,
+  );
 }
 
 async function requestDraftSync(

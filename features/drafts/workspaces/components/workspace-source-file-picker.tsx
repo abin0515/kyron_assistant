@@ -1,48 +1,61 @@
 "use client";
 
 import { FileText, LoaderCircle, Search, Upload, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import type { SourceFileListItem } from "@/types/api";
+import { useSourceFilePages } from "@/features/source-library/use-source-file-pages";
+import type { SourceFileListItem, SourceFileType } from "@/types/api";
 
 export function WorkspaceSourceFilePicker({
   busy,
   emptyDescription = "Try another search or upload a new source file.",
   errorMessage,
-  files,
-  loading = false,
+  initialFiles = [],
   onApply,
   onClose,
+  onFilesChange,
   onSelectedIdsChange,
   onUpload,
   selectionMode = "multiple",
   selectedIds,
+  types = [],
 }: {
   busy: boolean;
   emptyDescription?: string;
   errorMessage: string | null;
-  files: SourceFileListItem[];
-  loading?: boolean;
+  initialFiles?: SourceFileListItem[];
   onApply: () => void;
   onClose: () => void;
+  onFilesChange?: (files: SourceFileListItem[]) => void;
   onSelectedIdsChange: (ids: string[]) => void;
   onUpload: () => void;
   selectionMode?: "multiple" | "single";
   selectedIds: string[];
+  types?: SourceFileType[];
 }) {
-  const [query, setQuery] = useState("");
-  const visibleFiles = useMemo(
-    () => filterFiles(files, query),
-    [files, query],
-  );
+  const {
+    errorMessage: loadErrorMessage,
+    files,
+    hasMore,
+    knownFiles,
+    loadMore,
+    loading,
+    loadingMore,
+    query,
+    setQuery,
+  } = useSourceFilePages({ enabled: true, initialFiles, types });
   const applyLabel = getApplyLabel(
     loading,
     busy,
     selectionMode,
     selectedIds.length,
   );
+
+  useEffect(() => {
+    onFilesChange?.(knownFiles);
+  }, [knownFiles, onFilesChange]);
 
   function toggleFile(id: string) {
     if (selectionMode === "single") {
@@ -131,9 +144,9 @@ export function WorkspaceSourceFilePicker({
               />
               <p className="text-sm font-semibold">Loading source files</p>
             </div>
-          ) : visibleFiles.length > 0 ? (
+          ) : files.length > 0 ? (
             <ul className="border-border divide-border divide-y overflow-hidden rounded-xl border">
-              {visibleFiles.map((file) => (
+              {files.map((file) => (
                 <li key={file.id}>
                   <label className="hover:bg-muted/35 flex cursor-pointer items-center gap-3 px-4 py-3">
                     <input
@@ -172,11 +185,27 @@ export function WorkspaceSourceFilePicker({
               </p>
             </div>
           )}
+          {hasMore ? (
+            <div className="mt-4 flex justify-center">
+              <Button
+                disabled={loadingMore}
+                onClick={() => void loadMore()}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                {loadingMore ? (
+                  <LoaderCircle aria-hidden="true" className="animate-spin" />
+                ) : null}
+                {loadingMore ? "Loading..." : "Load more"}
+              </Button>
+            </div>
+          ) : null}
         </div>
 
-        {errorMessage ? (
+        {errorMessage || loadErrorMessage ? (
           <p className="text-destructive border-border border-t px-5 py-3 text-xs" role="alert">
-            {errorMessage}
+            {errorMessage ?? loadErrorMessage}
           </p>
         ) : null}
 
@@ -233,16 +262,6 @@ function getApplyLabel(
   }
 
   return `Use ${selectedCount} file${selectedCount === 1 ? "" : "s"}`;
-}
-
-function filterFiles(files: SourceFileListItem[], query: string) {
-  const normalizedQuery = query.trim().toLocaleLowerCase();
-
-  return normalizedQuery
-    ? files.filter((file) =>
-        file.name.toLocaleLowerCase().includes(normalizedQuery),
-      )
-    : files;
 }
 
 function formatFileSize(bytes: number): string {

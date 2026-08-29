@@ -27,6 +27,15 @@ const SOURCE_FILE_TYPE_BY_CONTENT_TYPE: Record<
     "docx",
 };
 
+const SOURCE_FILE_CONTENT_TYPE_BY_TYPE: Record<
+  SourceFileType,
+  SourceFileContentType
+> = {
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  pdf: "application/pdf",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+};
+
 export function toSourceFileListItem(
   sourceFile: SourceFileListSource,
   workspaceCount: number,
@@ -40,4 +49,10 @@ export function toSourceFileListItem(
     uploadedAt: sourceFile.recordCreatedAt,
     updatedAt: sourceFile.recordUpdatedAt,
   };
+}
+
+export function toSourceFileContentType(
+  type: SourceFileType,
+): SourceFileContentType {
+  return SOURCE_FILE_CONTENT_TYPE_BY_TYPE[type];
 }

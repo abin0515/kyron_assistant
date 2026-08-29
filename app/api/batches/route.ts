@@ -11,6 +11,10 @@ import {
   requestErrorResponse,
   validationErrorResponse,
 } from "@/server/http/api-response";
+import {
+  paginationMeta,
+  parsePageRequest,
+} from "@/server/http/pagination";
 import type {
   CreateDraftBatchRequest,
   DraftBatchListResponse,
@@ -20,10 +24,13 @@ import type {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const page = parsePageRequest(request.nextUrl.searchParams);
+    const result = await listCurrentUserBatches(page);
     const response = {
-      batches: await listCurrentUserBatches(),
+      batches: result.items,
+      pagination: paginationMeta(page, result.totalCount),
     } satisfies DraftBatchListResponse;
 
     return NextResponse.json(response, { headers: noStoreHeaders });

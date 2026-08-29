@@ -9,6 +9,10 @@ import {
   noStoreHeaders,
   requestErrorResponse,
 } from "@/server/http/api-response";
+import {
+  paginationMeta,
+  parsePageRequest,
+} from "@/server/http/pagination";
 import type { DraftListResponse } from "@/types/api";
 
 export const runtime = "nodejs";
@@ -40,11 +44,15 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const drafts =
+    const page = parsePageRequest(request.nextUrl.searchParams);
+    const result =
       scope === "generating"
-        ? await syncCurrentUserGeneratingDrafts()
-        : await syncCurrentUserDrafts();
-    const response = { drafts } satisfies DraftListResponse;
+        ? await syncCurrentUserGeneratingDrafts(page)
+        : await syncCurrentUserDrafts(page);
+    const response = {
+      drafts: result.items,
+      pagination: paginationMeta(page, result.totalCount),
+    } satisfies DraftListResponse;
 
     return NextResponse.json(response, {
       headers: noStoreHeaders,

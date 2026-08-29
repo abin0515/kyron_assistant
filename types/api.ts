@@ -149,6 +149,14 @@ export type UpdateDraftWorkspaceRequest = Partial<
 
 export type DraftWorkspaceListResponse = {
   workspaces: DraftWorkspaceSummary[];
+  pagination: PaginationMeta;
+};
+
+export type PaginationMeta = {
+  page: number;
+  perPage: number;
+  totalCount: number;
+  totalPages: number;
 };
 
 export type SourceFileType = "pdf" | "pptx" | "docx";
@@ -165,6 +173,11 @@ export type SourceFileListItem = {
 
 export type SourceFileListResponse = {
   files: SourceFileListItem[];
+  pagination: PaginationMeta;
+  summary: {
+    totalBytes: number;
+    linkedFiles: number;
+  };
 };
 
 export type SourceFileUsageItem = {
@@ -250,6 +263,7 @@ export type DraftBatch = {
 
 export type DraftBatchListResponse = {
   batches: DraftBatch[];
+  pagination: PaginationMeta;
 };
 
 export type DraftBatchResponse = {
@@ -271,6 +285,7 @@ export type ReviewBatchWorkspaceRequest = CourseSetup & {
 
 export type DraftListResponse = {
   drafts: ManagedDraft[];
+  pagination: PaginationMeta;
 };
 
 export type ApiErrorCode =

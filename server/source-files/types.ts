@@ -60,6 +60,16 @@ export type SourceFileSummary = Pick<
   workspaceCount: number;
 };
 
+export type SourceFileLibrarySummary = {
+  totalBytes: number;
+  linkedFiles: number;
+};
+
+export type SourceFileListFilter = {
+  contentTypes: SourceFileContentType[];
+  query: string;
+};
+
 export type SourceFileUsage = {
   workspaceId: string;
   workspaceName: string;

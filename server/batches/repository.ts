@@ -1,6 +1,11 @@
 import "server-only";
 
 import { getDatabase } from "@/server/db/client";
+import {
+  pageOffset,
+  type PageRequest,
+  type PageResult,
+} from "@/server/http/pagination";
 import type {
   BatchSetupStatus,
   DeleteDraftBatchResult,
@@ -108,21 +113,38 @@ export async function createBatchWithWorkspaces(
   ]);
 }
 
-export async function listBatchesByUser(userId: string): Promise<DraftBatch[]> {
+export async function listBatchesByUser(
+  userId: string,
+  page: PageRequest,
+): Promise<PageResult<DraftBatch>> {
   const sql = getDatabase();
+  const offset = pageOffset(page);
+  const counts = (await sql`
+    SELECT COUNT(*) AS total_count
+    FROM draft_batches
+    WHERE created_by_id = ${userId}
+  `) as Array<{ total_count: string | number }>;
   const batches = (await sql`
     SELECT id, name, record_created_at, record_updated_at
     FROM draft_batches
     WHERE created_by_id = ${userId}
     ORDER BY record_updated_at DESC
-    LIMIT 50
+    LIMIT ${page.pageSize}
+    OFFSET ${offset}
   `) as BatchRow[];
 
   if (batches.length === 0) {
-    return [];
+    return {
+      items: [],
+      totalCount: Number(counts[0]?.total_count ?? 0),
+    };
   }
 
-  const workspaces = await listBatchWorkspaceRows(userId);
+  const workspaces = await listBatchWorkspaceRows(
+    userId,
+    undefined,
+    batches.map((batch) => batch.id),
+  );
   const workspacesByBatch = new Map<string, BatchWorkspaceItem[]>();
 
   for (const row of workspaces) {
@@ -131,13 +153,16 @@ export async function listBatchesByUser(userId: string): Promise<DraftBatch[]> {
     workspacesByBatch.set(row.batch_id, items);
   }
 
-  return batches.map((batch) => ({
-    id: batch.id,
-    name: batch.name,
-    createdAt: toIsoString(batch.record_created_at),
-    updatedAt: toIsoString(batch.record_updated_at),
-    workspaces: workspacesByBatch.get(batch.id) ?? [],
-  }));
+  return {
+    items: batches.map((batch) => ({
+      id: batch.id,
+      name: batch.name,
+      createdAt: toIsoString(batch.record_created_at),
+      updatedAt: toIsoString(batch.record_updated_at),
+      workspaces: workspacesByBatch.get(batch.id) ?? [],
+    })),
+    totalCount: Number(counts[0]?.total_count ?? 0),
+  };
 }
 
 export async function getBatchById(
@@ -360,10 +385,12 @@ export async function deleteBatch(
 async function listBatchWorkspaceRows(
   userId: string,
   batchId?: string,
+  batchIds?: string[],
 ): Promise<BatchWorkspaceRow[]> {
   const sql = getDatabase();
 
-  return (await sql`
+  return (await sql.query(
+    `
     SELECT
       draft_workspaces.batch_id,
       draft_workspaces.id,
@@ -413,19 +440,23 @@ async function listBatchWorkspaceRows(
     ) AS ai_source ON TRUE
     LEFT JOIN drafts
       ON drafts.kyron_draft_id = draft_workspaces.kyron_draft_id
-      AND drafts.created_by_id = ${userId}
-    WHERE draft_workspaces.created_by_id = ${userId}
+      AND drafts.created_by_id = $1
+    WHERE draft_workspaces.created_by_id = $1
       AND draft_workspaces.batch_id IS NOT NULL
-      AND (${batchId ?? null}::UUID IS NULL OR draft_workspaces.batch_id = ${batchId ?? null}::UUID)
+      AND ($2::UUID IS NULL OR draft_workspaces.batch_id = $2::UUID)
+      AND (
+        $3::UUID[] IS NULL
+        OR draft_workspaces.batch_id = ANY($3::UUID[])
+      )
       AND draft_workspaces.batch_id IN (
         SELECT id
         FROM draft_batches
-        WHERE created_by_id = ${userId}
-        ORDER BY record_updated_at DESC
-        LIMIT 50
+        WHERE created_by_id = $1
       )
     ORDER BY draft_workspaces.record_updated_at DESC
-  `) as BatchWorkspaceRow[];
+    `,
+    [userId, batchId ?? null, batchIds ?? null],
+  )) as BatchWorkspaceRow[];
 }
 
 function toBatchWorkspace(row: BatchWorkspaceRow): BatchWorkspaceItem {

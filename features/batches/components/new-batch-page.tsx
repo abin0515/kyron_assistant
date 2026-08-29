@@ -3,48 +3,26 @@
 import { ArrowLeft, FileText, Layers3, Plus, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { createBatch } from "@/features/batches/api";
 import { BatchSourcePicker } from "@/features/batches/components/batch-source-picker";
-import { listSourceFiles } from "@/features/source-library/api";
 import type { SourceFileListItem } from "@/types/api";
 
 export function NewBatchPage() {
   const router = useRouter();
-  const [sourceFiles, setSourceFiles] = useState<SourceFileListItem[]>([]);
   const [batchName, setBatchName] = useState("");
   const [error, setError] = useState("");
-  const [loadingFiles, setLoadingFiles] = useState(true);
   const [creating, setCreating] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
-  const selectedSources = sourceFiles.filter((file) =>
-    selectedSourceIds.includes(file.id),
+  const [selectedSources, setSelectedSources] = useState<SourceFileListItem[]>(
+    [],
   );
+  const selectedSourceIds = selectedSources.map((file) => file.id);
   const canCreate = Boolean(batchName.trim() && selectedSources.length > 0);
-
-  useEffect(() => {
-    const controller = new AbortController();
-
-    void listSourceFiles(controller.signal)
-      .then((response) => setSourceFiles(response.files))
-      .catch((loadError) => {
-        if (!controller.signal.aborted) {
-          setError(errorMessage(loadError, "Source files could not be loaded."));
-        }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) {
-          setLoadingFiles(false);
-        }
-      });
-
-    return () => controller.abort();
-  }, []);
 
   async function handleCreate() {
     if (!canCreate || creating) {
@@ -119,7 +97,6 @@ export function NewBatchPage() {
                 </p>
               </div>
               <Button
-                disabled={loadingFiles}
                 onClick={() => setPickerOpen(true)}
                 type="button"
                 variant="outline"
@@ -150,8 +127,10 @@ export function NewBatchPage() {
                     <Button
                       aria-label={`Remove ${file.name}`}
                       onClick={() =>
-                        setSelectedSourceIds((current) =>
-                          current.filter((id) => id !== file.id),
+                        setSelectedSources((current) =>
+                          current.filter(
+                            (selectedFile) => selectedFile.id !== file.id,
+                          ),
                         )
                       }
                       size="icon-sm"
@@ -175,7 +154,7 @@ export function NewBatchPage() {
                     className="mx-auto size-6 text-muted-foreground"
                   />
                   <span className="mt-2 block text-sm font-bold">
-                    {loadingFiles ? "Loading Source Library…" : "No source files selected"}
+                    No source files selected
                   </span>
                   <span className="mt-1 block text-xs text-muted-foreground">
                     Choose reusable files already saved in Source Library.
@@ -210,10 +189,9 @@ export function NewBatchPage() {
 
       {pickerOpen ? (
         <BatchSourcePicker
-          files={sourceFiles}
-          initialSelectedIds={selectedSourceIds}
-          onApply={(ids) => {
-            setSelectedSourceIds(ids);
+          initialSelectedFiles={selectedSources}
+          onApply={(files) => {
+            setSelectedSources(files);
             setPickerOpen(false);
           }}
           onClose={() => setPickerOpen(false)}

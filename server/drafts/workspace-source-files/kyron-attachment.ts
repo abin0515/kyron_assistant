@@ -1,11 +1,10 @@
 import "server-only";
 
-import { createHash } from "node:crypto";
-
 import { get } from "@vercel/blob";
 
 import { listWorkspaceSourceFiles } from "@/server/drafts/workspace-source-files/repository";
 import { createKyronFile } from "@/server/kyron/client";
+import { calculateStoredBlobMd5 } from "@/server/source-files/checksum";
 import {
   getSourceFileById,
   saveSourceFileChecksum,
@@ -141,7 +140,17 @@ async function getOrCreateChecksum(
     return sourceFile.checksumMd5Base64;
   }
 
-  const checksum = await calculateChecksum(sourceFile, signal);
+  let checksum: string;
+
+  try {
+    checksum = await calculateStoredBlobMd5(sourceFile, signal);
+  } catch {
+    throw new KyronAttachmentTransferError(
+      signal.aborted
+        ? "Calculating the draft attachment checksum timed out."
+        : "The draft attachment checksum could not be calculated.",
+    );
+  }
   const savedFile = await saveSourceFileChecksum(
     sourceFile.id,
     userId,
@@ -155,43 +164,6 @@ async function getOrCreateChecksum(
   }
 
   return checksum;
-}
-
-async function calculateChecksum(
-  sourceFile: SourceFile,
-  signal: AbortSignal,
-): Promise<string> {
-  try {
-    const result = await downloadSourceFile(sourceFile, signal);
-    const reader = result.stream.getReader();
-    const hash = createHash("md5");
-    let receivedBytes = 0;
-
-    while (true) {
-      const { done, value } = await reader.read();
-
-      if (done) {
-        break;
-      }
-
-      hash.update(value);
-      receivedBytes += value.byteLength;
-    }
-
-    assertByteSize(sourceFile, receivedBytes);
-
-    return hash.digest("base64");
-  } catch (error) {
-    if (error instanceof KyronAttachmentTransferError) {
-      throw error;
-    }
-
-    throw new KyronAttachmentTransferError(
-      signal.aborted
-        ? "Calculating the draft attachment checksum timed out."
-        : "The draft attachment checksum could not be calculated.",
-    );
-  }
 }
 
 async function transferSourceFile(
@@ -261,15 +233,6 @@ async function downloadSourceFile(
   }
 
   return result;
-}
-
-function assertByteSize(sourceFile: SourceFile, receivedBytes: number): void {
-  if (receivedBytes !== sourceFile.byteSize) {
-    throw new KyronAttachmentTransferError(
-      "The stored draft attachment size changed during processing.",
-      false,
-    );
-  }
 }
 
 function assertTransferActive(signal: AbortSignal): void {

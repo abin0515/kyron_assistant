@@ -2,6 +2,11 @@ import "server-only";
 
 import { del, get, head } from "@vercel/blob";
 
+import type {
+  PageRequest,
+  PageResult,
+} from "@/server/http/pagination";
+import { calculateStoredBlobMd5 } from "@/server/source-files/checksum";
 import {
   claimSourceFileForExtraction,
   createSourceFileUploadSession,
@@ -16,6 +21,7 @@ import {
   listSourceFileUsages,
   markSourceFileExtractionFailed,
   saveSourceFileExtractedText,
+  summarizeSourceFilesByUser,
 } from "@/server/source-files/repository";
 import {
   extractTextFromSourceFile,
@@ -25,6 +31,8 @@ import { getCurrentUser } from "@/server/identity/current-user";
 import type {
   CreateSourceFileUploadSessionInput,
   SourceFile,
+  SourceFileLibrarySummary,
+  SourceFileListFilter,
   SourceFileSummary,
   SourceFileUploadSession,
   SourceFileUsage,
@@ -99,13 +107,19 @@ export async function finalizeSourceFileUploadForUser(
 
   validateUploadedBlob(upload, metadata);
 
+  const checksumMd5Base64 = await calculateStoredBlobMd5({
+    blobUrl: metadata.url,
+    byteSize: metadata.size,
+    contentType: upload.contentType,
+  });
+
   const sourceFile = await finalizeSourceFileUploadSession(upload.id, userId, {
     originalName: upload.originalName,
     blobPathname: metadata.pathname,
     blobUrl: metadata.url,
     contentType: upload.contentType,
     byteSize: metadata.size,
-    checksumMd5Base64: null,
+    checksumMd5Base64,
   });
 
   if (!sourceFile) {
@@ -188,12 +202,20 @@ export async function extractCurrentUserSourceFileText(
   }
 }
 
-export async function listCurrentUserSourceFiles(): Promise<
-  SourceFileSummary[]
+export async function listCurrentUserSourceFiles(
+  page: PageRequest,
+  filter: SourceFileListFilter,
+): Promise<
+  PageResult<SourceFileSummary> & { summary: SourceFileLibrarySummary }
 > {
   const user = await getCurrentUser();
 
-  return listSourceFilesByUser(user.id);
+  const [files, summary] = await Promise.all([
+    listSourceFilesByUser(user.id, page, filter),
+    summarizeSourceFilesByUser(user.id),
+  ]);
+
+  return { ...files, summary };
 }
 
 export async function listCurrentUserSourceFileUsages(

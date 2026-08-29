@@ -2,6 +2,11 @@ import "server-only";
 
 import { getDatabase } from "@/server/db/client";
 import type { StoredDraft } from "@/server/drafts/kyron-drafts/types";
+import {
+  pageOffset,
+  type PageRequest,
+  type PageResult,
+} from "@/server/http/pagination";
 import type { CurrentUser } from "@/server/identity/current-user";
 import type {
   AssetType,
@@ -148,6 +153,88 @@ export async function markDraftAvailabilityUnknown(
 
 export async function listDraftsByUser(
   userId: string,
+  page: PageRequest,
+): Promise<PageResult<StoredDraft>> {
+  const sql = getDatabase();
+  const offset = pageOffset(page);
+  const counts = (await sql`
+    SELECT COUNT(*) AS total_count
+    FROM drafts
+    WHERE created_by_id = ${userId}
+  `) as Array<{ total_count: string | number }>;
+  const rows = (await sql`
+    SELECT
+      kyron_draft_id,
+      name,
+      asset_type,
+      status,
+      status_message,
+      preview_url,
+      editor_url,
+      kyron_created_at,
+      kyron_updated_at,
+      kyron_availability,
+      kyron_checked_at,
+      created_by_id,
+      created_by_name,
+      created_by_email,
+      record_created_at,
+      record_updated_at
+    FROM drafts
+    WHERE created_by_id = ${userId}
+    ORDER BY record_created_at DESC
+    LIMIT ${page.pageSize}
+    OFFSET ${offset}
+  `) as DraftRow[];
+
+  return {
+    items: rows.map(toStoredDraft),
+    totalCount: Number(counts[0]?.total_count ?? 0),
+  };
+}
+
+export async function listDraftsByIds(
+  userId: string,
+  draftIds: number[],
+): Promise<StoredDraft[]> {
+  if (draftIds.length === 0) {
+    return [];
+  }
+
+  const sql = getDatabase();
+  const rows = (await sql.query(
+    `
+      SELECT
+        kyron_draft_id,
+        name,
+        asset_type,
+        status,
+        status_message,
+        preview_url,
+        editor_url,
+        kyron_created_at,
+        kyron_updated_at,
+        kyron_availability,
+        kyron_checked_at,
+        created_by_id,
+        created_by_name,
+        created_by_email,
+        record_created_at,
+        record_updated_at
+      FROM drafts
+      WHERE created_by_id = $1
+        AND kyron_draft_id = ANY($2::BIGINT[])
+    `,
+    [userId, draftIds],
+  )) as DraftRow[];
+
+  return rows.map(toStoredDraft);
+}
+
+export async function listDraftsForSynchronization(
+  userId: string,
+  generatingOnly: boolean,
+  limit = 50,
 ): Promise<StoredDraft[]> {
   const sql = getDatabase();
   const rows = (await sql`
@@ -170,8 +257,10 @@ export async function listDraftsByUser(
       record_updated_at
     FROM drafts
     WHERE created_by_id = ${userId}
-    ORDER BY record_created_at DESC
-    LIMIT 50
+      AND kyron_availability <> 'unavailable'
+      AND (${generatingOnly} = FALSE OR status = 'started')
+    ORDER BY kyron_checked_at ASC NULLS FIRST
+    LIMIT ${limit}
   `) as DraftRow[];
 
   return rows.map(toStoredDraft);

@@ -82,9 +82,10 @@ export async function deleteDraftWorkspace(
 }
 
 export async function listDraftWorkspaces(
+  page = 1,
   signal?: AbortSignal,
 ): Promise<DraftWorkspaceListResponse> {
-  const response = await fetch("/api/draft-workspaces", {
+  const response = await fetch(`/api/draft-workspaces?page=${page}`, {
     headers: {
       Accept: "application/json",
     },

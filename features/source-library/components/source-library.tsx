@@ -29,7 +29,18 @@ import type {
   SourceFileSort,
   SourceFileTypeFilter,
 } from "@/features/source-library/types";
-import type { SourceFileListItem } from "@/types/api";
+import type {
+  PaginationMeta,
+  SourceFileListItem,
+  SourceFileListResponse,
+} from "@/types/api";
+
+const EMPTY_PAGINATION: PaginationMeta = {
+  page: 1,
+  perPage: 25,
+  totalCount: 0,
+  totalPages: 0,
+};
 
 export function SourceLibrary() {
   const deleteControllerRef = useRef<AbortController | null>(null);
@@ -42,12 +53,18 @@ export function SourceLibrary() {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [files, setFiles] = useState<SourceFileListItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [pagination, setPagination] = useState(EMPTY_PAGINATION);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SourceFileSort>("recent");
   const [typeFilter, setTypeFilter] =
     useState<SourceFileTypeFilter>("all");
   const [uploadOpen, setUploadOpen] = useState(false);
   const [usageFile, setUsageFile] = useState<SourceFileRecord | null>(null);
+  const [summary, setSummary] = useState<SourceFileListResponse["summary"]>({
+    totalBytes: 0,
+    linkedFiles: 0,
+  });
 
   const visibleFiles = useMemo(
     () => filterAndSortFiles(files, query, typeFilter, sort),
@@ -62,10 +79,12 @@ export function SourceLibrary() {
     setLoading(true);
 
     try {
-      const response = await listSourceFiles(controller.signal);
+      const response = await listSourceFiles({ page: 1 }, controller.signal);
 
       if (!controller.signal.aborted) {
         setFiles(response.files);
+        setPagination(response.pagination);
+        setSummary(response.summary);
       }
     } catch (error) {
       if (!controller.signal.aborted) {
@@ -85,10 +104,12 @@ export function SourceLibrary() {
 
     async function loadInitialFiles() {
       try {
-        const response = await listSourceFiles(controller.signal);
+        const response = await listSourceFiles({ page: 1 }, controller.signal);
 
         if (!controller.signal.aborted) {
           setFiles(response.files);
+          setPagination(response.pagination);
+          setSummary(response.summary);
         }
       } catch (error) {
         if (!controller.signal.aborted) {
@@ -122,12 +143,26 @@ export function SourceLibrary() {
       ...uploadedFiles,
       ...current.filter((file) => !uploadedIds.has(file.id)),
     ]);
+    setPagination((current) => ({
+      ...current,
+      totalCount: current.totalCount + uploadedFiles.length,
+      totalPages: Math.ceil(
+        (current.totalCount + uploadedFiles.length) / current.perPage,
+      ),
+    }));
+    setSummary((current) => ({
+      ...current,
+      totalBytes:
+        current.totalBytes +
+        uploadedFiles.reduce((total, file) => total + file.size, 0),
+    }));
     setQuery("");
     setSort("recent");
     setTypeFilter("all");
     setFeedback(
       `${uploadedFiles.length} file${uploadedFiles.length === 1 ? "" : "s"} uploaded.`,
     );
+    void refreshFiles();
   }
 
   async function handleViewUsage(file: SourceFileListRecord) {
@@ -203,6 +238,26 @@ export function SourceLibrary() {
       if (!controller.signal.aborted) {
         const fileName = deleteFile?.name ?? "Source file";
         setFiles((current) => current.filter((file) => file.id !== id));
+        setPagination((current) => {
+          const totalCount = Math.max(0, current.totalCount - 1);
+
+          return {
+            ...current,
+            totalCount,
+            totalPages:
+              totalCount === 0 ? 0 : Math.ceil(totalCount / current.perPage),
+          };
+        });
+        setSummary((current) => ({
+          totalBytes: Math.max(
+            0,
+            current.totalBytes - (deleteFile?.size ?? 0),
+          ),
+          linkedFiles: Math.max(
+            0,
+            current.linkedFiles - (deleteFile?.workspaceCount ? 1 : 0),
+          ),
+        }));
         setDeleteFile(null);
         setFeedback(`${fileName} deleted.`);
       }
@@ -215,6 +270,35 @@ export function SourceLibrary() {
         deleteControllerRef.current = null;
         setDeleting(false);
       }
+    }
+  }
+
+  async function loadMoreFiles() {
+    if (loadingMore || pagination.page >= pagination.totalPages) {
+      return;
+    }
+
+    setLoadingMore(true);
+    setErrorMessage(null);
+
+    try {
+      const response = await listSourceFiles({
+        page: pagination.page + 1,
+      });
+      setFiles((current) => {
+        const existingIds = new Set(current.map((file) => file.id));
+
+        return [
+          ...current,
+          ...response.files.filter((file) => !existingIds.has(file.id)),
+        ];
+      });
+      setPagination(response.pagination);
+      setSummary(response.summary);
+    } catch (error) {
+      setErrorMessage(messageFromError(error));
+    } finally {
+      setLoadingMore(false);
     }
   }
 
@@ -236,7 +320,11 @@ export function SourceLibrary() {
         </Button>
       </header>
 
-      <SourceSummary files={files} />
+      <SourceSummary
+        linkedFiles={summary.linkedFiles}
+        totalBytes={summary.totalBytes}
+        totalFiles={pagination.totalCount}
+      />
 
       <section className="bg-card overflow-hidden rounded-xl ring-1 ring-border">
         <div className="border-border grid gap-4 border-b px-4 py-4 sm:px-5">
@@ -244,7 +332,7 @@ export function SourceLibrary() {
             <div>
               <h2 className="text-base font-semibold">All source files</h2>
               <p className="text-muted-foreground mt-1 text-xs">
-                {visibleFiles.length} of {files.length} files shown
+                {visibleFiles.length} shown · {files.length} of {pagination.totalCount} loaded
               </p>
             </div>
             <Button
@@ -294,6 +382,23 @@ export function SourceLibrary() {
             onViewUsage={(file) => void handleViewUsage(file)}
           />
         )}
+        {pagination.page < pagination.totalPages ? (
+          <div className="border-border flex justify-center border-t px-5 py-4">
+            <Button
+              disabled={loadingMore}
+              onClick={() => void loadMoreFiles()}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              <RefreshCw
+                aria-hidden="true"
+                className={loadingMore ? "animate-spin" : undefined}
+              />
+              Load more
+            </Button>
+          </div>
+        ) : null}
       </section>
 
       <SourceUploadDialog
@@ -391,14 +496,20 @@ function SourceFileControls({
   );
 }
 
-function SourceSummary({ files }: { files: SourceFileListItem[] }) {
-  const totalBytes = files.reduce((total, file) => total + file.size, 0);
-  const linkedFiles = files.filter((file) => file.workspaceCount > 0).length;
+function SourceSummary({
+  linkedFiles,
+  totalBytes,
+  totalFiles,
+}: {
+  linkedFiles: number;
+  totalBytes: number;
+  totalFiles: number;
+}) {
   const items = [
     {
       icon: <FileStack aria-hidden="true" />,
       label: "Total files",
-      value: files.length,
+      value: totalFiles,
     },
     {
       icon: <HardDrive aria-hidden="true" />,

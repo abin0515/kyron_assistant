@@ -13,6 +13,10 @@ import {
   updateDraftWorkspace,
 } from "@/server/drafts/workspaces/repository";
 import type {
+  PageRequest,
+  PageResult,
+} from "@/server/http/pagination";
+import type {
   DeleteDraftWorkspaceResult,
 } from "@/server/drafts/workspaces/types";
 import { uploadWorkspaceAttachmentToKyron } from "@/server/drafts/workspace-source-files/kyron-attachment";
@@ -54,12 +58,12 @@ export async function deleteCurrentUserDraftWorkspace(
   return deleteDraftWorkspace(id, user.id);
 }
 
-export async function listCurrentUserDraftWorkspaces(): Promise<
-  DraftWorkspaceSummary[]
-> {
+export async function listCurrentUserDraftWorkspaces(
+  page: PageRequest,
+): Promise<PageResult<DraftWorkspaceSummary>> {
   const user = await getCurrentUser();
 
-  return listDraftWorkspacesByUser(user.id);
+  return listDraftWorkspacesByUser(user.id, page);
 }
 
 export async function submitCurrentUserDraftWorkspace(

@@ -43,8 +43,9 @@ metadata. Uploaded file bytes belong in private object storage, not PostgreSQL.
 ### 3. Kyron submission
 
 - `POST /api/draft-workspaces/[id]/submit` validates the saved workspace.
-- An optional linked PDF/PPTX is read from private Blob storage, checksummed,
-  streamed to Kyron's signed target, and referenced by `signed_id`.
+- An optional linked PDF/PPTX reuses the checksum saved when it entered the
+  Source Library, streams to Kyron's signed target, and is referenced by
+  `signed_id`. Older records calculate and cache the checksum on first use.
 - The server creates the Kyron asset and requires successful Neon persistence.
 - The workspace stores the returned Kyron draft ID.
 - Submission state prevents ordinary duplicate clicks and concurrent requests.
@@ -54,7 +55,10 @@ metadata. Uploaded file bytes belong in private object storage, not PostgreSQL.
 - `GET /api/drafts/[id]` reads Kyron and persists the latest normalized state.
 - The browser polls active drafts every 20 seconds with bounded retry backoff.
 - `GET /api/drafts` reads saved Kyron state from Neon.
-- `POST /api/drafts/sync` refreshes up to 50 records in batches of four.
+- Management APIs return 25 records per page and the UI loads later pages on
+  demand.
+- `POST /api/drafts/sync` selects up to 50 eligible records independently of
+  the visible page, then refreshes them in batches of four.
 - Kyron `404` responses mark a draft unavailable without deleting local history.
 
 ### 5. Management UI
@@ -69,7 +73,8 @@ metadata. Uploaded file bytes belong in private object storage, not PostgreSQL.
 - Private PDF, PPTX, and DOCX files upload directly to Vercel Blob through
   short-lived, owner-authorized upload tokens.
 - The browser then calls `POST /api/source-files/complete`; the server verifies
-  Blob metadata, finalizes Neon synchronously, and returns the real list item.
+  Blob metadata, calculates the MD5 from a stream, finalizes Neon synchronously,
+  and returns the real list item.
 - The Blob completion webhook calls the same idempotent finalizer as a fallback
   when the browser leaves before acknowledgement.
 - Neon stores owner-scoped metadata and workspace relationships.
@@ -168,14 +173,11 @@ Kyron public upload workflow accepts only PDF and PPTX.
 
 ## Next milestones
 
-1. Apply and manually verify the batch migrations and end-to-end flow with
-   representative DOCX, PDF, and PPTX files.
-2. Enable Microsoft sign-in in Clerk and verify owner-scoped data isolation.
-3. Add durable background jobs before increasing the batch limit or expected
+1. Enable Microsoft sign-in in Clerk and verify owner-scoped data isolation.
+2. Add durable background jobs before increasing the batch limit or expected
    processing time.
-4. Add Kyron folder placement and generated-content operations when public APIs
+3. Add Kyron folder placement and generated-content operations when public APIs
    become available.
-5. Add pagination and background synchronization before larger-scale usage.
 
 ## Deferred engineering improvements
 

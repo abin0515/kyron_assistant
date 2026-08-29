@@ -24,10 +24,14 @@ export function WorkspaceList() {
   const [activeFilter, setActiveFilter] = useState<DraftFilter>("all");
   const {
     errorMessage,
+    hasMore,
+    loadMore,
     loading,
+    loadingMore,
     records,
     removeRecord,
     synchronizeAll,
+    totalCount,
   } = useWorkspaceRecords();
 
   const filteredRecords = records.filter((record) =>
@@ -71,7 +75,7 @@ export function WorkspaceList() {
               {draftFilterHeading(activeFilter)}
             </CardTitle>
             <p className="text-xs text-muted-foreground">
-              {filteredRecords.length} {draftFilterDescription(activeFilter)}
+              {filteredRecords.length} {draftFilterDescription(activeFilter)} · {records.length} of {totalCount} loaded
             </p>
           </div>
           <Button
@@ -98,6 +102,23 @@ export function WorkspaceList() {
           onShowAll={() => setActiveFilter("all")}
           records={filteredRecords}
         />
+        {hasMore ? (
+          <div className="border-border flex justify-center border-t px-5 py-4">
+            <Button
+              disabled={loadingMore}
+              onClick={() => void loadMore()}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              <RefreshCw
+                aria-hidden="true"
+                className={loadingMore ? "animate-spin" : undefined}
+              />
+              Load more
+            </Button>
+          </div>
+        ) : null}
       </Card>
     </div>
   );

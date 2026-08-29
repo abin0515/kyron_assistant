@@ -9,9 +9,15 @@ import type {
   ReviewBatchWorkspaceRequest,
 } from "@/types/api";
 
-export async function listBatches(signal?: AbortSignal): Promise<DraftBatch[]> {
-  const response = await fetch("/api/batches", requestOptions(signal));
-  return (await parseJsonResponse<DraftBatchListResponse>(response)).batches;
+export async function listBatches(
+  page = 1,
+  signal?: AbortSignal,
+): Promise<DraftBatchListResponse> {
+  const response = await fetch(
+    `/api/batches?page=${page}`,
+    requestOptions(signal),
+  );
+  return parseJsonResponse<DraftBatchListResponse>(response);
 }
 
 export async function getBatch(

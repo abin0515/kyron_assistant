@@ -31,12 +31,20 @@ import type {
   BatchOverallStatus,
   BatchRecord,
 } from "@/features/batches/types";
+import type { PaginationMeta } from "@/types/api";
 import { cn } from "@/lib/utils";
 
 export function BatchListPage() {
   const [batches, setBatches] = useState<BatchRecord[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [pagination, setPagination] = useState<PaginationMeta>({
+    page: 1,
+    perPage: 25,
+    totalCount: 0,
+    totalPages: 0,
+  });
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState("");
   const [mobilePreviewOpen, setMobilePreviewOpen] = useState(false);
@@ -51,12 +59,13 @@ export function BatchListPage() {
   const loadBatches = useCallback(async (signal?: AbortSignal) => {
     setError("");
     try {
-      const result = await listBatches(signal);
-      setBatches(result);
+      const result = await listBatches(1, signal);
+      setBatches(result.batches);
+      setPagination(result.pagination);
       setSelectedId((current) =>
-        result.some((batch) => batch.id === current)
+        result.batches.some((batch) => batch.id === current)
           ? current
-          : (result[0]?.id ?? ""),
+          : (result.batches[0]?.id ?? ""),
       );
     } catch (loadError) {
       if (!signal?.aborted) {
@@ -72,10 +81,11 @@ export function BatchListPage() {
   useEffect(() => {
     const controller = new AbortController();
 
-    void listBatches(controller.signal)
+    void listBatches(1, controller.signal)
       .then((result) => {
-        setBatches(result);
-        setSelectedId(result[0]?.id ?? "");
+        setBatches(result.batches);
+        setPagination(result.pagination);
+        setSelectedId(result.batches[0]?.id ?? "");
       })
       .catch((loadError) => {
         if (!controller.signal.aborted) {
@@ -163,6 +173,20 @@ export function BatchListPage() {
                 No matching batches.
               </p>
             ) : null}
+            {pagination.page < pagination.totalPages && !query.trim() ? (
+              <div className="p-4">
+                <Button
+                  className="w-full"
+                  disabled={loadingMore}
+                  onClick={() => void loadMoreBatches()}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  {loadingMore ? "Loading…" : "Load more batches"}
+                </Button>
+              </div>
+            ) : null}
           </div>
         </aside>
 
@@ -216,6 +240,32 @@ export function BatchListPage() {
       ) : null}
     </div>
   );
+
+  async function loadMoreBatches() {
+    if (loadingMore || pagination.page >= pagination.totalPages) {
+      return;
+    }
+
+    setLoadingMore(true);
+    setError("");
+
+    try {
+      const result = await listBatches(pagination.page + 1);
+      setBatches((current) => {
+        const existingIds = new Set(current.map((batch) => batch.id));
+
+        return [
+          ...current,
+          ...result.batches.filter((batch) => !existingIds.has(batch.id)),
+        ];
+      });
+      setPagination(result.pagination);
+    } catch (loadError) {
+      setError(errorMessage(loadError, "More batches could not be loaded."));
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 }
 
 function BatchNavigatorItem({

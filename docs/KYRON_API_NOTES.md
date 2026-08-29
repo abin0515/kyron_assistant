@@ -58,9 +58,16 @@ or omitted during Kyron submission unless Kyron confirms public DOCX support.
 
 Private object storage holds the file bytes and Neon stores ownership, storage
 references, processing state, extracted content, and a reusable MD5 checksum.
-On submission, the server reads a supported file as a stream, uploads it to
+New uploads calculate and save the checksum when the file enters the Source
+Library. Older records without a checksum retain a submission-time fallback
+that calculates and caches it before the first attachment transfer. On
+submission, the server reads a supported file as a stream, uploads it to
 Kyron's signed target, and sends the returned `signed_id` with the draft
 creation request.
+
+Draft, Source Library, and Batch management endpoints are paginated. Draft
+synchronization is bounded separately from the displayed page so active or
+stale records are not skipped simply because they are not currently visible.
 
 ## API gaps for future workflow
 

@@ -1,37 +1,55 @@
 "use client";
 
-import { FileText, Search, X } from "lucide-react";
+import { FileText, LoaderCircle, Search, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type {
-  BatchSourceFile,
   BatchSourceFileType,
 } from "@/features/batches/types";
+import { useSourceFilePages } from "@/features/source-library/use-source-file-pages";
+import type { SourceFileListItem } from "@/types/api";
 
 type BatchSourcePickerProps = {
-  files: BatchSourceFile[];
-  initialSelectedIds: string[];
-  onApply: (ids: string[]) => void;
+  initialSelectedFiles: SourceFileListItem[];
+  onApply: (files: SourceFileListItem[]) => void;
   onClose: () => void;
 };
 
 type FileTypeFilter = "all" | BatchSourceFileType;
 
 export function BatchSourcePicker({
-  files,
-  initialSelectedIds,
+  initialSelectedFiles,
   onApply,
   onClose,
 }: BatchSourcePickerProps) {
-  const [query, setQuery] = useState("");
-  const [selectedIds, setSelectedIds] = useState(initialSelectedIds);
+  const [selectedIds, setSelectedIds] = useState(
+    initialSelectedFiles.map((file) => file.id),
+  );
   const [typeFilter, setTypeFilter] = useState<FileTypeFilter>("all");
-  const visibleFiles = useMemo(
-    () => filterFiles(files, query, typeFilter),
-    [files, query, typeFilter],
+  const {
+    errorMessage,
+    files,
+    hasMore,
+    knownFiles,
+    loadMore,
+    loading,
+    loadingMore,
+    query,
+    setQuery,
+  } = useSourceFilePages({
+    enabled: true,
+    initialFiles: initialSelectedFiles,
+    types: typeFilter === "all" ? [] : [typeFilter],
+  });
+  const selectedFilesById = useMemo(
+    () =>
+      new Map(
+        [...initialSelectedFiles, ...knownFiles].map((file) => [file.id, file]),
+      ),
+    [initialSelectedFiles, knownFiles],
   );
 
   useEffect(() => {
@@ -45,7 +63,7 @@ export function BatchSourcePicker({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
 
-  const visibleIds = visibleFiles.map((file) => file.id);
+  const visibleIds = files.map((file) => file.id);
   const allVisibleSelected =
     visibleIds.length > 0 &&
     visibleIds.every((id) => selectedIds.includes(id));
@@ -119,9 +137,17 @@ export function BatchSourcePicker({
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
-          {visibleFiles.length > 0 ? (
+          {loading ? (
+            <div className="grid justify-items-center gap-2 px-4 py-12 text-center">
+              <LoaderCircle
+                aria-hidden="true"
+                className="size-5 animate-spin text-muted-foreground"
+              />
+              <p className="text-sm font-semibold">Loading source files</p>
+            </div>
+          ) : files.length > 0 ? (
             <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border">
-              {visibleFiles.map((file) => (
+              {files.map((file) => (
                 <li key={file.id}>
                   <label className="flex cursor-pointer items-center gap-3 px-4 py-3 hover:bg-muted/35">
                     <input
@@ -157,7 +183,29 @@ export function BatchSourcePicker({
               </p>
             </div>
           )}
+          {hasMore ? (
+            <div className="mt-4 flex justify-center">
+              <Button
+                disabled={loadingMore}
+                onClick={() => void loadMore()}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                {loadingMore ? (
+                  <LoaderCircle aria-hidden="true" className="animate-spin" />
+                ) : null}
+                {loadingMore ? "Loading..." : "Load more"}
+              </Button>
+            </div>
+          ) : null}
         </div>
+
+        {errorMessage ? (
+          <p className="border-t border-border px-5 py-3 text-xs text-destructive" role="alert">
+            {errorMessage}
+          </p>
+        ) : null}
 
         <footer className="flex flex-col-reverse justify-between gap-3 border-t border-border px-5 py-4 sm:flex-row sm:items-center">
           <div className="flex items-center gap-3">
@@ -191,7 +239,14 @@ export function BatchSourcePicker({
             </Button>
             <Button
               disabled={selectedIds.length === 0}
-              onClick={() => onApply(selectedIds)}
+              onClick={() =>
+                onApply(
+                  selectedIds.flatMap((id) => {
+                    const file = selectedFilesById.get(id);
+                    return file ? [file] : [];
+                  }),
+                )
+              }
               type="button"
             >
               Use {selectedIds.length} file{selectedIds.length === 1 ? "" : "s"}
@@ -200,21 +255,6 @@ export function BatchSourcePicker({
         </footer>
       </section>
     </div>
-  );
-}
-
-function filterFiles(
-  files: BatchSourceFile[],
-  query: string,
-  typeFilter: FileTypeFilter,
-) {
-  const normalizedQuery = query.trim().toLocaleLowerCase();
-
-  return files.filter(
-    (file) =>
-      (typeFilter === "all" || file.type === typeFilter) &&
-      (!normalizedQuery ||
-        file.name.toLocaleLowerCase().includes(normalizedQuery)),
   );
 }
 

@@ -9,14 +9,38 @@ import type {
   SourceFileUploadClientPayload,
   SourceFileUsageResponse,
 } from "@/types/api";
+import type { SourceFileType } from "@/types/api";
 import { parseJsonResponse } from "@/features/drafts/shared/api-response";
 
 const MULTIPART_UPLOAD_THRESHOLD = 10 * 1024 * 1024;
 
 export async function listSourceFiles(
+  {
+    page = 1,
+    perPage,
+    query = "",
+    types = [],
+  }: {
+    page?: number;
+    perPage?: number;
+    query?: string;
+    types?: SourceFileType[];
+  } = {},
   signal?: AbortSignal,
 ): Promise<SourceFileListResponse> {
-  const response = await fetch("/api/source-files", {
+  const searchParams = new URLSearchParams({ page: String(page) });
+
+  if (perPage) {
+    searchParams.set("per_page", String(perPage));
+  }
+  if (query.trim()) {
+    searchParams.set("query", query.trim());
+  }
+  if (types.length > 0) {
+    searchParams.set("types", types.join(","));
+  }
+
+  const response = await fetch(`/api/source-files?${searchParams}`, {
     headers: {
       Accept: "application/json",
     },
