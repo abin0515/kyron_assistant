@@ -52,7 +52,20 @@ components:
   schemas:
     LessonCollection:
       type: object
-      required: [id, slug, name, description, published_at, created_at, updated_at, preview_url, editor_url, status, status_message]
+      required:
+        [
+          id,
+          slug,
+          name,
+          description,
+          published_at,
+          created_at,
+          updated_at,
+          preview_url,
+          editor_url,
+          status,
+          status_message,
+        ]
       properties:
         id:
           type: integer
@@ -87,6 +100,26 @@ components:
         status_message:
           type: string
           description: Status message of async work.
+    AssetFolder:
+      type: object
+      required: [id, name, parent_id, created_at, updated_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        parent_id:
+          type: [integer, 'null']
+          format: int64
+          description: >-
+            The folder this folder is nested under. Every organization has a root folder with a null parent_id.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
     PaginationMeta:
       type: object
       required: [current_page, next_page, prev_page, total_pages, total_count]
@@ -133,6 +166,7 @@ security:
 tags:
   - name: organizations
   - name: lesson_collections
+  - name: asset_folders
   - name: files
 
 paths:
@@ -238,6 +272,241 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /asset_folders:
+    get:
+      tags: [asset_folders]
+      operationId: listAssetFolders
+      summary: List the folders inside another folder.
+      parameters:
+        - name: parent_id
+          in: query
+          required: false
+          description: >-
+            Only return folders directly inside this folder. Defaults to the top level of the organization's library.
+          schema:
+            type: integer
+            format: int64
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: The folders inside the requested folder.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [asset_folders, meta]
+                properties:
+                  asset_folders:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AssetFolder'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No folder with that parent_id exists or this API key can't access it.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      tags: [asset_folders]
+      operationId: createAssetFolder
+      summary: Create a folder.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  description: The folder's name. Must be unique among the folders with the same parent.
+                parent_id:
+                  type: integer
+                  format: int64
+                  description: >-
+                    Optional. The folder to create this folder inside of. Defaults to the organization's root folder.
+      responses:
+        '201':
+          description: The newly created folder.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [asset_folder]
+                properties:
+                  asset_folder:
+                    $ref: '#/components/schemas/AssetFolder'
+        '400':
+          description: The request body is missing required fields or is otherwise invalid.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No folder with that parent_id exists or this API key can't create folders in it.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: The folder could not be created, e.g. the name is already taken by a sibling folder.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /asset_folders/{id}:
+    get:
+      tags: [asset_folders]
+      operationId: getAssetFolder
+      summary: Return a folder with the folders and lesson collections directly inside it.
+      description: >-
+        Folders and lesson collections are paginated together and returned in separate keys. `asset_folder` describes
+        the requested folder itself and does not change across pages.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The folder's ID.
+          schema:
+            type: integer
+            format: int64
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: The requested folder and the children directly inside it.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [asset_folder, asset_folders, lesson_collections, meta]
+                properties:
+                  asset_folder:
+                    $ref: '#/components/schemas/AssetFolder'
+                  asset_folders:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AssetFolder'
+                  lesson_collections:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/LessonCollection'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No folder with that ID exists or this API key can't access it.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    patch:
+      tags: [asset_folders]
+      operationId: updateAssetFolder
+      summary: Rename the folder or move it into a different folder.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The folder's ID.
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: The folder's new name.
+                parent_id:
+                  type: integer
+                  format: int64
+                  description: The folder to move this folder into.
+      responses:
+        '200':
+          description: The updated folder.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [asset_folder]
+                properties:
+                  asset_folder:
+                    $ref: '#/components/schemas/AssetFolder'
+        '400':
+          description: The request body is invalid.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No folder with that ID exists or this API key can't access it.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: The folder could not be updated.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      tags: [asset_folders]
+      operationId: deleteAssetFolder
+      summary: Delete the folder with the given ID. Only empty folders can be deleted.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The folder's ID.
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: The folder was deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message]
+                properties:
+                  message:
+                    type: string
+                    description: A confirmation message.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No folder with that ID exists or this API key can't access it.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: >-
+            The folder could not be deleted because it still has contents or is the organization's library folder.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
   /lesson_collections:
     get:
       tags: [lesson_collections]
@@ -290,9 +559,9 @@ paths:
 
                     - "lesson": an engaging lesson that balances direct instruction with guided conversations.
 
-                    - "practice": a series of multiple choice questions and conversation activities to help
-                    learners practice what they're learning. Great if you already have learning content and want to
-                    supplement it.
+                    - "practice": a series of multiple choice questions and conversation activities to help learners
+                    practice what they're learning. Great if you already have learning content and want to supplement
+                    it.
 
                     - "scenario": a scenario-based experience that allows learners to apply knowledge in realistic,
                     context-rich situations. This standalone activity uses active engagement and real-world challenges
@@ -307,6 +576,12 @@ paths:
                   type: integer
                   enum: [480, 900, 1800, 3600]
                   description: Intended lesson length in seconds. Must be one of 480, 900, 1800, or 3600.
+                asset_folder_id:
+                  type: integer
+                  format: int64
+                  description: >-
+                    Optional. The folder to create the lesson collection in. Defaults to the top level of the
+                    organization's library.
                 alignment_content_signed_id:
                   type: string
                   description: >-
@@ -333,6 +608,12 @@ paths:
                 $ref: '#/components/schemas/Error'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No folder with that asset_folder_id exists or this API key can't access it.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /lesson_collections/{id}:
     get:
@@ -428,6 +709,12 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           description: No lesson collection with that ID exists or this API key can't access it.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: A publish is already in progress for this lesson collection.
           content:
             application/problem+json:
               schema:

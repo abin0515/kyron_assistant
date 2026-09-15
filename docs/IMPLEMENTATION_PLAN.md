@@ -176,8 +176,16 @@ Kyron public upload workflow accepts only PDF and PPTX.
 1. Enable Microsoft sign-in in Clerk and verify owner-scoped data isolation.
 2. Add durable background jobs before increasing the batch limit or expected
    processing time.
-3. Add Kyron folder placement and generated-content operations when public APIs
-   become available.
+3. Verify the newly documented folder GET endpoints, including nested folders
+   and the shared pagination of folders and courses. Then add a destination
+   folder selector for individual workspaces and a shared destination for a
+   batch. Persist the selection and send optional `asset_folder_id` during
+   course creation. Folder creation can follow; folder mutation controls are
+   not part of the first selector implementation. See the
+   [folder API notes](KYRON_API_NOTES.md#folder-support--document-reviewed-september-14-2026).
+4. Add generated-content reads and editing when supported public APIs become
+   available. The current update does not provide these operations or a way
+   to move existing lesson collections between folders.
 
 ## Deferred engineering improvements
 

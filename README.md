@@ -63,8 +63,11 @@ signed-in Clerk user ID.
   generation. Scanned PDFs require OCR and are not supported yet.
 - Batch generation currently runs inside a request rather than a durable
   background workflow, so the initial limit is 20 workspaces per batch.
-- Folder placement and generated-content reads require additional Kyron API
-  support.
+- Kyron folder selection and placement are documented by the public API but
+  are not yet implemented or live-tested in the launcher. See the
+  [folder API notes](docs/KYRON_API_NOTES.md#folder-support--document-reviewed-september-14-2026).
+- Generated-content reads and detailed editing still require additional Kyron
+  public API support.
 - Publishing and Kyron asset deletion are intentionally not implemented.
 
 ## Verification
