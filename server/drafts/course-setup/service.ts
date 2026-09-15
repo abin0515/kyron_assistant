@@ -15,8 +15,10 @@ import {
   DURATIONS,
   type CourseSetup,
 } from "@/types/api";
+import type { CourseSetupGenerationResult } from "@/server/drafts/course-setup-calibrations/types";
 
 const MAX_COURSE_SETUP_INPUT_CHARACTERS = 200_000;
+export const COURSE_SETUP_PROMPT_VERSION = "course-setup-v1";
 
 export async function generateCourseSetup(
   {
@@ -27,11 +29,24 @@ export async function generateCourseSetup(
     workspaceId?: string;
   },
 ): Promise<CourseSetup> {
+  return (await generateCourseSetupWithMetadata({ brief, workspaceId })).setup;
+}
+
+export async function generateCourseSetupWithMetadata(
+  {
+    brief,
+    workspaceId,
+  }: {
+    brief: string;
+    workspaceId?: string;
+  },
+): Promise<CourseSetupGenerationResult> {
   const input = await buildCourseSetupInput(brief, workspaceId);
+  const model = getOpenAIEnv().OPENAI_MODEL;
 
   const response = await getOpenAIClient().responses.create(
     {
-      model: getOpenAIEnv().OPENAI_MODEL,
+      model,
       instructions: COURSE_SETUP_INSTRUCTIONS,
       input,
       reasoning: { effort: "low" },
@@ -49,7 +64,11 @@ export async function generateCourseSetup(
     { timeout: 45_000 },
   );
 
-  return parseCourseSetup(response.output_text);
+  return {
+    setup: parseCourseSetup(response.output_text),
+    promptVersion: COURSE_SETUP_PROMPT_VERSION,
+    model,
+  };
 }
 
 export class CourseSetupInputError extends Error {

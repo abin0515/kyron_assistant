@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { generateCourseSetup } from "@/features/drafts/workspaces/api";
-import type { CourseSetup, GenerateCourseSetupRequest } from "@/types/api";
+import type { DraftWorkspace, GenerateCourseSetupRequest } from "@/types/api";
 
 export type CourseSetupGeneratorState = {
   errorMessage: string | null;
@@ -19,7 +19,7 @@ export function useCourseSetupGenerator() {
 
   async function generate(
     input: GenerateCourseSetupRequest,
-  ): Promise<CourseSetup | null> {
+  ): Promise<DraftWorkspace | null> {
     controllerRef.current?.abort();
     const controller = new AbortController();
     controllerRef.current = controller;

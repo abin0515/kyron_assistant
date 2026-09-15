@@ -1,6 +1,7 @@
-import { Sparkles } from "lucide-react";
+import { CircleCheck, LoaderCircle, Sparkles } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -10,6 +11,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { WorkspaceDraftAttachment } from "@/features/drafts/workspaces/components/workspace-draft-attachment";
+import { courseSetupsMatch } from "@/lib/course-setup";
 import {
   COURSE_FIELD_LIMITS,
   type AssetType,
@@ -20,16 +22,20 @@ import {
 type WorkspaceFormProps = {
   disabled: boolean;
   fieldErrors: Record<string, string[]>;
-  generated: boolean;
+  onMarkReviewed: () => void;
   onChange: (workspace: DraftWorkspace) => void;
+  reviewBusy: boolean;
+  reviewError: string | null;
   workspace: DraftWorkspace;
 };
 
 export function WorkspaceForm({
   disabled,
   fieldErrors,
-  generated,
+  onMarkReviewed,
   onChange,
+  reviewBusy,
+  reviewError,
   workspace,
 }: WorkspaceFormProps) {
   return (
@@ -43,12 +49,7 @@ export function WorkspaceForm({
             Review and edit every field before creating the course draft.
           </p>
         </div>
-        {generated ? (
-          <Badge className="border-border bg-card text-foreground" variant="outline">
-            <Sparkles aria-hidden="true" />
-            AI generated
-          </Badge>
-        ) : null}
+        <ReviewState workspace={workspace} />
       </CardHeader>
       <CardContent className="grid gap-5 px-5 py-5 sm:grid-cols-2">
         <TextField
@@ -168,9 +169,113 @@ export function WorkspaceForm({
           disabled={disabled}
           workspaceId={workspace.id}
         />
+
+        {workspace.courseSetupCalibration ? (
+          <div className="grid gap-3 border-t border-border pt-5 sm:col-span-2 sm:grid-cols-[1fr_auto] sm:items-center">
+            <div>
+              <p className="text-sm font-semibold">
+                {workspace.courseSetupCalibration.reviewStatus === "reviewed"
+                  ? "Course setup reviewed"
+                  : "Human review required"}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {reviewHelpText(workspace)}
+              </p>
+              {reviewError ? (
+                <p className="mt-2 text-xs text-primary" role="alert">
+                  {reviewError}
+                </p>
+              ) : null}
+            </div>
+            {workspace.courseSetupCalibration.reviewStatus !== "reviewed" ? (
+              <Button
+                className="min-h-10 w-fit font-semibold"
+                disabled={disabled || reviewBusy || !hasRequiredFields(workspace)}
+                onClick={onMarkReviewed}
+                type="button"
+                variant="outline"
+              >
+                {reviewBusy ? (
+                  <>
+                    <LoaderCircle aria-hidden="true" className="animate-spin" />
+                    Saving review…
+                  </>
+                ) : (
+                  <>
+                    <CircleCheck aria-hidden="true" />
+                    Mark as Reviewed
+                  </>
+                )}
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );
+}
+
+function ReviewState({ workspace }: { workspace: DraftWorkspace }) {
+  const calibration = workspace.courseSetupCalibration;
+
+  if (!calibration) {
+    return null;
+  }
+
+  if (calibration.reviewStatus === "reviewed") {
+    return (
+      <Badge className="border-border bg-card text-foreground" variant="outline">
+        <CircleCheck aria-hidden="true" />
+        Reviewed
+      </Badge>
+    );
+  }
+
+  const edited = !courseSetupsMatch(workspace, calibration.generatedSetup);
+
+  return (
+    <Badge className="border-border bg-card text-foreground" variant="outline">
+      <Sparkles aria-hidden="true" />
+      {edited ? "AI generated · Edited" : "AI generated"}
+    </Badge>
+  );
+}
+
+function reviewHelpText(workspace: DraftWorkspace): string {
+  const calibration = workspace.courseSetupCalibration;
+
+  if (!calibration) {
+    return "";
+  }
+
+  if (calibration.reviewStatus !== "reviewed") {
+    return "Confirm that the current fields are acceptable before creating the Kyron draft.";
+  }
+
+  if (!calibration.reviewedBy || !calibration.reviewedAt) {
+    return "The current course setup is approved.";
+  }
+
+  return `Reviewed by ${calibration.reviewedBy.name} · ${formatReviewDate(calibration.reviewedAt)}`;
+}
+
+function hasRequiredFields(workspace: DraftWorkspace): boolean {
+  return [
+    workspace.name,
+    workspace.description,
+    workspace.learningObjective,
+    workspace.audience,
+  ].every((value) => value.trim().length > 0);
+}
+
+function formatReviewDate(value: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(value));
 }
 
 function TextField({

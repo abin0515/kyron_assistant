@@ -4,8 +4,12 @@ import {
   CourseSetupInputError,
   CourseSetupSourceProcessingError,
   CourseSetupWorkspaceNotFoundError,
-  generateCourseSetup,
 } from "@/server/drafts/course-setup/service";
+import {
+  CourseSetupCalibrationConflictError,
+  CourseSetupCalibrationNotFoundError,
+  generateCurrentUserWorkspaceCourseSetup,
+} from "@/server/drafts/course-setup-calibrations/service";
 import {
   conflictErrorResponse,
   internalErrorResponse,
@@ -14,10 +18,7 @@ import {
   requestErrorResponse,
   validationErrorResponse,
 } from "@/server/http/api-response";
-import {
-  COURSE_BRIEF_MAX_LENGTH,
-  type GenerateCourseSetupResponse,
-} from "@/types/api";
+import type { GenerateCourseSetupResponse } from "@/types/api";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -46,15 +47,24 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const suggestion = await generateCourseSetup(parsedRequest.input);
-    const response = { suggestion } satisfies GenerateCourseSetupResponse;
+    const workspace = await generateCurrentUserWorkspaceCourseSetup(
+      parsedRequest.input,
+    );
+    const response = { workspace } satisfies GenerateCourseSetupResponse;
 
     return NextResponse.json(response, {
       headers: noStoreHeaders,
     });
   } catch (error) {
-    if (error instanceof CourseSetupWorkspaceNotFoundError) {
+    if (
+      error instanceof CourseSetupWorkspaceNotFoundError ||
+      error instanceof CourseSetupCalibrationNotFoundError
+    ) {
       return notFoundErrorResponse(error.message);
+    }
+
+    if (error instanceof CourseSetupCalibrationConflictError) {
+      return conflictErrorResponse(error.message, false);
     }
 
     if (error instanceof CourseSetupInputError) {
@@ -90,7 +100,7 @@ function hasSameOrigin(request: NextRequest): boolean {
 function parseRequest(
   value: unknown,
 ):
-  | { input: { brief: string; workspaceId?: string } }
+  | { input: { workspaceId: string } }
   | { errors: Record<string, string[]> } {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return { errors: { request: ["Request body must be an object."] } };
@@ -98,48 +108,14 @@ function parseRequest(
 
   const data = value as Record<string, unknown>;
   const errors: Record<string, string[]> = {};
-  const brief = readOptionalText(data.brief, "brief", errors);
   const workspaceId = readOptionalWorkspaceId(data.workspaceId, errors);
 
-  if (brief.length > COURSE_BRIEF_MAX_LENGTH) {
-    errors.brief = [
-      `brief must be ${COURSE_BRIEF_MAX_LENGTH.toLocaleString()} characters or fewer.`,
-    ];
-  }
-
-  if (!brief && !workspaceId) {
-    errors.request = [
-      "Provide a brief or a draft workspace with AI source files.",
-    ];
-  }
-
-  if (Object.keys(errors).length > 0) {
+  if (!workspaceId) {
+    errors.workspaceId ??= ["workspaceId is required."];
     return { errors };
   }
 
-  return {
-    input: {
-      brief,
-      ...(workspaceId ? { workspaceId } : {}),
-    },
-  };
-}
-
-function readOptionalText(
-  value: unknown,
-  field: string,
-  errors: Record<string, string[]>,
-): string {
-  if (value === undefined) {
-    return "";
-  }
-
-  if (typeof value !== "string") {
-    errors[field] = [`${field} must be a string.`];
-    return "";
-  }
-
-  return value.trim();
+  return { input: { workspaceId } };
 }
 
 function readOptionalWorkspaceId(

@@ -96,32 +96,71 @@ export async function updateDraftWorkspace(
   input: UpdateDraftWorkspaceRequest,
 ): Promise<DraftWorkspace | null> {
   const sql = getDatabase();
-  const rows = (await sql`
-    UPDATE draft_workspaces
-    SET
-      source_text = COALESCE(${input.sourceText ?? null}, source_text),
-      name = COALESCE(${input.name ?? null}, name),
-      description = COALESCE(${input.description ?? null}, description),
-      learning_objective = COALESCE(
-        ${input.learningObjective ?? null},
-        learning_objective
-      ),
-      audience = COALESCE(${input.audience ?? null}, audience),
-      asset_type = COALESCE(
-        ${input.assetType ?? null}::TEXT,
-        asset_type
-      ),
-      duration_seconds = COALESCE(
-        ${input.duration ?? null}::INTEGER,
-        duration_seconds
-      ),
-      record_updated_at = NOW()
-    WHERE id = ${id}
-      AND created_by_id = ${userId}
-    RETURNING *
-  `) as DraftWorkspaceRow[];
+  const results = await sql.transaction((transaction) => [
+    transaction`
+      UPDATE draft_workspaces
+      SET
+        source_text = COALESCE(${input.sourceText ?? null}, source_text),
+        name = COALESCE(${input.name ?? null}, name),
+        description = COALESCE(${input.description ?? null}, description),
+        learning_objective = COALESCE(
+          ${input.learningObjective ?? null},
+          learning_objective
+        ),
+        audience = COALESCE(${input.audience ?? null}, audience),
+        asset_type = COALESCE(
+          ${input.assetType ?? null}::TEXT,
+          asset_type
+        ),
+        duration_seconds = COALESCE(
+          ${input.duration ?? null}::INTEGER,
+          duration_seconds
+        ),
+        record_updated_at = NOW()
+      WHERE id = ${id}
+        AND created_by_id = ${userId}
+        AND kyron_draft_id IS NULL
+        AND status IN ('editing', 'error')
+        AND NOT EXISTS (
+          SELECT 1
+          FROM course_setup_calibrations AS calibration
+          WHERE calibration.workspace_id = draft_workspaces.id
+            AND calibration.generation_token IS NOT NULL
+        )
+      RETURNING *
+    `,
+    transaction`
+      UPDATE course_setup_calibrations AS calibration
+      SET
+        review_status = 'needs_review',
+        review_result = NULL,
+        reviewed_setup = NULL,
+        reviewed_by_id = NULL,
+        reviewed_by_name = NULL,
+        reviewed_by_email = NULL,
+        reviewed_at = NULL,
+        record_updated_at = NOW()
+      FROM draft_workspaces AS workspace
+      WHERE calibration.workspace_id = workspace.id
+        AND calibration.workspace_id = ${id}
+        AND workspace.created_by_id = ${userId}
+        AND workspace.kyron_draft_id IS NULL
+        AND workspace.status IN ('editing', 'error')
+        AND calibration.review_status = 'reviewed'
+        AND calibration.reviewed_setup IS DISTINCT FROM JSONB_BUILD_OBJECT(
+          'name', BTRIM(workspace.name),
+          'description', BTRIM(workspace.description),
+          'learningObjective', BTRIM(workspace.learning_objective),
+          'audience', BTRIM(workspace.audience),
+          'assetType', workspace.asset_type,
+          'duration', workspace.duration_seconds
+        )
+    `,
+  ]);
+  const updatedRows = results[0] as DraftWorkspaceRow[];
+  const row = updatedRows[0];
 
-  return rows[0] ? toDraftWorkspace(rows[0]) : null;
+  return row ? toDraftWorkspace(row) : null;
 }
 
 export async function deleteDraftWorkspace(
@@ -228,6 +267,34 @@ export async function startDraftWorkspaceSubmission(
       AND created_by_id = ${userId}
       AND kyron_draft_id IS NULL
       AND status IN ('editing', 'error')
+      AND NOT EXISTS (
+        SELECT 1
+        FROM course_setup_calibrations AS calibration
+        WHERE calibration.workspace_id = draft_workspaces.id
+          AND calibration.generation_token IS NOT NULL
+      )
+      AND (
+        NOT EXISTS (
+          SELECT 1
+          FROM course_setup_calibrations AS calibration
+          WHERE calibration.workspace_id = draft_workspaces.id
+            AND calibration.generated_setup IS NOT NULL
+        )
+        OR EXISTS (
+          SELECT 1
+          FROM course_setup_calibrations AS calibration
+          WHERE calibration.workspace_id = draft_workspaces.id
+            AND calibration.review_status = 'reviewed'
+            AND calibration.reviewed_setup = JSONB_BUILD_OBJECT(
+              'name', BTRIM(draft_workspaces.name),
+              'description', BTRIM(draft_workspaces.description),
+              'learningObjective', BTRIM(draft_workspaces.learning_objective),
+              'audience', BTRIM(draft_workspaces.audience),
+              'assetType', draft_workspaces.asset_type,
+              'duration', draft_workspaces.duration_seconds
+            )
+        )
+      )
     RETURNING *
   `) as DraftWorkspaceRow[];
 
@@ -293,6 +360,7 @@ function toDraftWorkspace(row: DraftWorkspaceRow): DraftWorkspace {
     duration: Number(row.duration_seconds) as Duration,
     kyronDraftId: toNullableNumber(row.kyron_draft_id),
     submittedAt: toNullableIsoString(row.submitted_at),
+    courseSetupCalibration: null,
     createdBy: {
       id: row.created_by_id,
       name: row.created_by_name,

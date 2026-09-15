@@ -12,11 +12,12 @@ keeping a human responsible for reviewing and submitting the course setup.
 3. Optionally generate a suggested title, description, learning objective,
    audience, asset type, and duration with AI.
 4. Review and edit every generated field.
-5. Autosave the workspace in Neon.
-6. Optionally choose one PDF or PPTX as the Kyron draft attachment.
-7. Submit the completed setup and optional attachment to Kyron.
-8. Poll Kyron and synchronize the latest status into Neon.
-9. When complete, open the Kyron preview or editor.
+5. Mark an AI-generated setup as reviewed after it is acceptable.
+6. Autosave the workspace in Neon.
+7. Optionally choose one PDF or PPTX as the Kyron draft attachment.
+8. Submit the completed setup and optional attachment to Kyron.
+9. Poll Kyron and synchronize the latest status into Neon.
+10. When complete, open the Kyron preview or editor.
 
 ## Supported inputs
 
@@ -29,6 +30,7 @@ keeping a human responsible for reviewing and submitting the course setup.
 
 - Resumable, autosaved workspaces
 - AI-assisted course setup with editable results
+- Human-reviewed calibration snapshots for single-asset AI recommendations
 - Manual course setup
 - Kyron draft creation
 - Browser polling and explicit list synchronization
@@ -44,7 +46,7 @@ keeping a human responsible for reviewing and submitting the course setup.
 - Kyron is the source of truth for asset generation and availability.
 - Vercel Blob stores private source-file bytes.
 - Neon stores local workspaces, source-file metadata and relationships, Kyron
-  IDs, and last-observed status.
+  IDs, last-observed status, and course-setup calibration snapshots.
 - Clerk user IDs scope every workspace and draft query.
 - A Kyron `404` marks a saved draft unavailable. The user may then explicitly
   delete its local workspace and synchronization record.
@@ -96,13 +98,32 @@ keeping a human responsible for reviewing and submitting the course setup.
   only for AI input.
 - Batch workspaces also appear in the ordinary Drafts list and continue through
   the same submission, polling, synchronization, preview, and editor workflow.
+- Deleting a batch removes its unsubmitted workspaces. Workspaces already being
+  submitted or submitted to Kyron are detached from the batch and remain in the
+  ordinary Drafts list.
 
 Authentication was implemented before file persistence so every
 workspace, file, and batch has a stable owner.
 
+## Course setup calibration
+
+- Single-asset AI generation stores only the latest successful recommendation
+  for the active review cycle, together with its prompt version and model.
+- Human edits do not change the AI baseline. Marking a setup reviewed saves the
+  current six course fields and authenticated reviewer identity.
+- Editing an approved setup invalidates that approval. Successful regeneration
+  replaces the baseline and starts a new review cycle; failed regeneration
+  preserves the prior cycle.
+- AI-generated workspaces require current review approval before submission.
+  Manual workspaces continue to submit without calibration state.
+- Successful Kyron submission stores the exact normalized course setup sent to
+  Kyron, without temporary attachment identifiers.
+
 ## Still deferred
 
-- Kyron folder selection and placement
+- Kyron folder selection and placement: supported by the updated public API,
+  but not yet implemented or live-tested in the launcher. See
+  [folder API notes](KYRON_API_NOTES.md#folder-support--document-reviewed-september-14-2026).
 - Reading or editing generated sections and activities
 - Publishing and Kyron asset deletion
 

@@ -36,9 +36,14 @@ metadata. Uploaded file bytes belong in private object storage, not PostgreSQL.
 
 ### 2. AI course setup
 
-- `POST /api/drafts/generate-course-setup` accepts source text.
-- OpenAI returns a structured suggestion for all course fields.
-- The user reviews and edits the result before submission.
+- `POST /api/drafts/generate-course-setup` reads the saved workspace sources.
+- OpenAI returns a structured suggestion for all course fields. A successful
+  response updates the editable workspace and latest calibration baseline
+  together.
+- `POST /api/draft-workspaces/[id]/course-setup-review` snapshots the current
+  saved fields with the authenticated reviewer identity.
+- Editing after approval invalidates the review. AI-generated workspaces must
+  have a current review before submission; manual workspaces are unchanged.
 
 ### 3. Kyron submission
 
@@ -99,6 +104,13 @@ Stores normalized Kyron metadata, generation status, availability, owner
 identity, preview/editor URLs, and synchronization timestamps.
 
 The workspace references its Kyron record after successful submission.
+
+### `course_setup_calibrations`
+
+Stores one active single-workspace review cycle: the latest successful AI
+baseline, prompt/model metadata, human-reviewed setup and reviewer, and the
+exact setup accepted by Kyron. It intentionally does not store full generation
+history.
 
 ## Error model
 

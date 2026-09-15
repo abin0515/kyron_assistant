@@ -60,12 +60,11 @@ export type CourseSetup = {
 };
 
 export type GenerateCourseSetupRequest = {
-  brief?: string;
-  workspaceId?: string;
+  workspaceId: string;
 };
 
 export type GenerateCourseSetupResponse = {
-  suggestion: CourseSetup;
+  workspace: DraftWorkspace;
 };
 
 export type CreateDraftRequest = CourseSetup & {
@@ -118,6 +117,7 @@ export type DraftWorkspace = CourseSetup & {
   sourceText: string;
   kyronDraftId: number | null;
   submittedAt: string | null;
+  courseSetupCalibration: CourseSetupCalibration | null;
   createdBy: {
     id: string;
     name: string;
@@ -125,6 +125,30 @@ export type DraftWorkspace = CourseSetup & {
   };
   recordCreatedAt: string;
   recordUpdatedAt: string;
+};
+
+export type CourseSetupReviewStatus = "needs_review" | "reviewed";
+export type CourseSetupReviewResult =
+  | "approved_as_is"
+  | "edited_and_approved";
+
+export type CourseSetupCalibration = {
+  generatedSetup: CourseSetup;
+  generatedAt: string;
+  promptVersion: string;
+  model: string;
+  reviewStatus: CourseSetupReviewStatus;
+  reviewResult: CourseSetupReviewResult | null;
+  reviewedSetup: CourseSetup | null;
+  reviewedBy: {
+    id: string;
+    name: string;
+    email: string;
+  } | null;
+  reviewedAt: string | null;
+  submittedSetup: CourseSetup | null;
+  submittedAt: string | null;
+  kyronDraftId: number | null;
 };
 
 export type DraftWorkspaceSummary = Pick<

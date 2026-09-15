@@ -1,6 +1,5 @@
 import { parseJsonResponse } from "@/features/drafts/shared/api-response";
 import type {
-  CourseSetup,
   DraftWorkspace,
   DraftWorkspaceListResponse,
   GenerateCourseSetupRequest,
@@ -140,7 +139,7 @@ export async function updateWorkspaceSourceFiles(
 export async function generateCourseSetup(
   input: GenerateCourseSetupRequest,
   signal?: AbortSignal,
-): Promise<CourseSetup> {
+): Promise<DraftWorkspace> {
   const response = await fetch("/api/drafts/generate-course-setup", {
     method: "POST",
     headers: {
@@ -156,7 +155,25 @@ export async function generateCourseSetup(
     response,
   );
 
-  return result.suggestion;
+  return result.workspace;
+}
+
+export async function markCourseSetupReviewed(
+  id: string,
+  signal?: AbortSignal,
+): Promise<DraftWorkspace> {
+  const response = await fetch(
+    `/api/draft-workspaces/${id}/course-setup-review`,
+    {
+      method: "POST",
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+      credentials: "same-origin",
+      signal,
+    },
+  );
+
+  return parseJsonResponse<DraftWorkspace>(response);
 }
 
 export async function submitDraftWorkspace(

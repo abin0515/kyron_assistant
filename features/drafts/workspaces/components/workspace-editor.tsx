@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { buttonVariants } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useDraftPolling } from "@/features/drafts/kyron-drafts/hooks/use-draft-polling";
 import { DraftApiError } from "@/features/drafts/shared/api-response";
@@ -19,17 +19,27 @@ import { useCourseSetupGenerator } from "@/features/drafts/workspaces/hooks/use-
 import { useWorkspaceAutosave } from "@/features/drafts/workspaces/hooks/use-workspace-autosave";
 import {
   getDraftWorkspace,
+  markCourseSetupReviewed,
   submitDraftWorkspace,
 } from "@/features/drafts/workspaces/api";
+import {
+  courseSetupsMatch,
+  shouldInvalidateCourseSetupReview,
+} from "@/lib/course-setup";
 import type { DraftWorkspace } from "@/types/api";
 
 export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
   const router = useRouter();
+  const reviewControllerRef = useRef<AbortController | null>(null);
   const submissionControllerRef = useRef<AbortController | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
-  const [generated, setGenerated] = useState(false);
+  const [regenerationDialog, setRegenerationDialog] = useState<
+    "edited" | "reviewed" | null
+  >(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
   const [submissionBusy, setSubmissionBusy] = useState(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const [workspace, setWorkspace] = useState<DraftWorkspace | null>(null);
@@ -66,6 +76,7 @@ export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
 
   useEffect(
     () => () => {
+      reviewControllerRef.current?.abort();
       submissionControllerRef.current?.abort();
     },
     [],
@@ -74,8 +85,10 @@ export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
   function handleWorkspaceChange(nextWorkspace: DraftWorkspace) {
     setFieldErrors({});
     setSubmissionError(null);
-    setWorkspace(nextWorkspace);
-    autosave.queueSave(nextWorkspace);
+    setReviewError(null);
+    const workspaceWithCurrentReview = invalidateLocalReview(nextWorkspace);
+    setWorkspace(workspaceWithCurrentReview);
+    autosave.queueSave(workspaceWithCurrentReview);
   }
 
   function handleSourceChange(sourceText: string) {
@@ -84,8 +97,30 @@ export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
     }
 
     generator.reset();
-    setGenerated(false);
     handleWorkspaceChange({ ...workspace, sourceText });
+  }
+
+  function handleGenerateRequest() {
+    if (!workspace) {
+      return;
+    }
+
+    const calibration = workspace.courseSetupCalibration;
+
+    if (calibration?.reviewStatus === "reviewed") {
+      setRegenerationDialog("reviewed");
+      return;
+    }
+
+    if (
+      calibration &&
+      !courseSetupsMatch(workspace, calibration.generatedSetup)
+    ) {
+      setRegenerationDialog("edited");
+      return;
+    }
+
+    void handleGenerate();
   }
 
   async function handleGenerate() {
@@ -93,14 +128,52 @@ export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
       return;
     }
 
-    const setup = await generator.generate({
-      brief: workspace.sourceText,
-      workspaceId: workspace.id,
-    });
+    setRegenerationDialog(null);
 
-    if (setup) {
-      setGenerated(true);
-      handleWorkspaceChange({ ...workspace, ...setup });
+    try {
+      const savedWorkspace = await autosave.saveNow(workspace);
+      const generatedWorkspace = await generator.generate({
+        workspaceId: savedWorkspace.id,
+      });
+
+      if (generatedWorkspace) {
+        setWorkspace(generatedWorkspace);
+      }
+    } catch {
+      // Autosave exposes its own actionable error state.
+    }
+  }
+
+  async function handleMarkReviewed() {
+    if (!workspace || reviewBusy) {
+      return;
+    }
+
+    reviewControllerRef.current?.abort();
+    const controller = new AbortController();
+    reviewControllerRef.current = controller;
+    setReviewBusy(true);
+    setReviewError(null);
+
+    try {
+      const savedWorkspace = await autosave.saveNow(workspace);
+      const reviewedWorkspace = await markCourseSetupReviewed(
+        savedWorkspace.id,
+        controller.signal,
+      );
+
+      if (!controller.signal.aborted) {
+        setWorkspace(reviewedWorkspace);
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        setReviewError(messageFromError(error));
+      }
+    } finally {
+      if (reviewControllerRef.current === controller) {
+        reviewControllerRef.current = null;
+        setReviewBusy(false);
+      }
     }
   }
 
@@ -150,7 +223,8 @@ export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
     return <ErrorState message={loadError || "Draft workspace not found."} />;
   }
 
-  const locked = Boolean(workspace.kyronDraftId) || submissionBusy;
+  const locked =
+    Boolean(workspace.kyronDraftId) || submissionBusy || reviewBusy;
   const ready = hasRequiredCourseSetup(workspace);
 
   return (
@@ -195,7 +269,8 @@ export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
           <CourseSourceCard
             disabled={locked}
             generatorState={generator.state}
-            onGenerate={() => void handleGenerate()}
+            hasGeneratedSetup={Boolean(workspace.courseSetupCalibration)}
+            onGenerate={handleGenerateRequest}
             onSourceChange={handleSourceChange}
             sourceText={workspace.sourceText}
             workspaceId={workspace.id}
@@ -203,8 +278,10 @@ export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
           <WorkspaceForm
             disabled={locked || generator.state.phase === "generating"}
             fieldErrors={fieldErrors}
-            generated={generated}
+            onMarkReviewed={() => void handleMarkReviewed()}
             onChange={handleWorkspaceChange}
+            reviewBusy={reviewBusy}
+            reviewError={reviewError}
             workspace={workspace}
           />
         </div>
@@ -224,6 +301,76 @@ export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
           workspace={workspace}
         />
       </div>
+      {regenerationDialog ? (
+        <RegenerationDialog
+          kind={regenerationDialog}
+          onCancel={() => setRegenerationDialog(null)}
+          onConfirm={() => void handleGenerate()}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function invalidateLocalReview(workspace: DraftWorkspace): DraftWorkspace {
+  const calibration = workspace.courseSetupCalibration;
+
+  if (
+    !calibration ||
+    !shouldInvalidateCourseSetupReview(calibration, workspace)
+  ) {
+    return workspace;
+  }
+
+  return {
+    ...workspace,
+    courseSetupCalibration: {
+      ...calibration,
+      reviewStatus: "needs_review",
+      reviewResult: null,
+      reviewedSetup: null,
+      reviewedBy: null,
+      reviewedAt: null,
+    },
+  };
+}
+
+function RegenerationDialog({
+  kind,
+  onCancel,
+  onConfirm,
+}: {
+  kind: "edited" | "reviewed";
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const reviewed = kind === "reviewed";
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/45 p-4">
+      <section
+        aria-labelledby="regenerate-course-setup-title"
+        aria-modal="true"
+        className="w-full max-w-md rounded-xl bg-card p-5 shadow-2xl"
+        role="dialog"
+      >
+        <h2 className="text-lg font-bold" id="regenerate-course-setup-title">
+          {reviewed ? "Start a new review cycle?" : "Regenerate course setup?"}
+        </h2>
+        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+          {reviewed
+            ? "This setup has already been reviewed. Regenerating will replace the AI recommendation and start a new review cycle."
+            : "You have edited the current course setup. Regenerating will replace those changes with a new AI recommendation."}
+        </p>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button onClick={onCancel} type="button" variant="outline">
+            Cancel
+          </Button>
+          <Button onClick={onConfirm} type="button">
+            Regenerate
+          </Button>
+        </div>
+      </section>
     </div>
   );
 }

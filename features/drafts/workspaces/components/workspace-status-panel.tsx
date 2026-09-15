@@ -19,6 +19,7 @@ import { getPollingDraftDisplayStatus } from "@/features/drafts/shared/status";
 import { DeleteWorkspaceButton } from "@/features/drafts/workspaces/components/delete-workspace-button";
 import type { WorkspaceAutosaveState } from "@/features/drafts/workspaces/hooks/use-workspace-autosave";
 import type { DraftWorkspace } from "@/types/api";
+import { requiresCourseSetupReview } from "@/lib/course-setup";
 
 type WorkspaceStatusPanelProps = {
   autosaveState: WorkspaceAutosaveState;
@@ -57,7 +58,11 @@ export function WorkspaceStatusPanel({
   const saved = !["pending", "saving", "error"].includes(
     autosaveState.phase,
   );
-  const canSubmit = ready && saved && !submissionBusy;
+  const reviewRequired = requiresCourseSetupReview(
+    workspace.courseSetupCalibration,
+    workspace,
+  );
+  const canSubmit = ready && saved && !reviewRequired && !submissionBusy;
 
   return (
     <Card className="sticky top-24 min-w-0 gap-0 rounded-xl border-border py-0 ring-1 ring-border">
@@ -78,6 +83,11 @@ export function WorkspaceStatusPanel({
           <ReadinessItem complete={saved}>
             Latest changes are saved
           </ReadinessItem>
+          {workspace.courseSetupCalibration ? (
+            <ReadinessItem complete={!reviewRequired}>
+              AI course setup is reviewed
+            </ReadinessItem>
+          ) : null}
         </div>
 
         {submissionError || workspace.status === "error" ? (
@@ -106,6 +116,13 @@ export function WorkspaceStatusPanel({
           <p className="text-xs leading-relaxed text-muted-foreground">
             Complete the title, description, learning objective, and audience
             before creating the draft.
+          </p>
+        ) : null}
+
+        {ready && reviewRequired ? (
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Review and approve the AI-generated course setup before creating
+            the Kyron draft.
           </p>
         ) : null}
 

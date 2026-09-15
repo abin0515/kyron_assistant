@@ -3,7 +3,6 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 
 import {
-  completeDraftWorkspaceSubmission,
   createDraftWorkspace,
   deleteDraftWorkspace,
   failDraftWorkspaceSubmission,
@@ -12,6 +11,11 @@ import {
   startDraftWorkspaceSubmission,
   updateDraftWorkspace,
 } from "@/server/drafts/workspaces/repository";
+import {
+  completeWorkspaceSubmissionWithCalibration,
+  getCourseSetupCalibration,
+} from "@/server/drafts/course-setup-calibrations/repository";
+import { hydrateCourseSetupCalibration } from "@/server/drafts/course-setup-calibrations/service";
 import type {
   PageRequest,
   PageResult,
@@ -22,8 +26,11 @@ import type {
 import { uploadWorkspaceAttachmentToKyron } from "@/server/drafts/workspace-source-files/kyron-attachment";
 import { createDraftWithRequiredPersistence } from "@/server/drafts/kyron-drafts/service";
 import { getCurrentUser } from "@/server/identity/current-user";
+import { requiresCourseSetupReview } from "@/lib/course-setup";
 import type {
+  CourseSetupCalibration,
   CreateDraftRequest,
+  CourseSetup,
   DraftWorkspace,
   DraftWorkspaceSummary,
   UpdateDraftWorkspaceRequest,
@@ -38,7 +45,11 @@ export async function getCurrentUserDraftWorkspace(
 ): Promise<DraftWorkspace | null> {
   const user = await getCurrentUser();
 
-  return getDraftWorkspaceById(id, user.id);
+  const workspace = await getDraftWorkspaceById(id, user.id);
+
+  return workspace
+    ? hydrateCourseSetupCalibration(workspace, user.id)
+    : null;
 }
 
 export async function updateCurrentUserDraftWorkspace(
@@ -47,7 +58,11 @@ export async function updateCurrentUserDraftWorkspace(
 ): Promise<DraftWorkspace | null> {
   const user = await getCurrentUser();
 
-  return updateDraftWorkspace(id, user.id, input);
+  const workspace = await updateDraftWorkspace(id, user.id, input);
+
+  return workspace
+    ? hydrateCourseSetupCalibration(workspace, user.id)
+    : null;
 }
 
 export async function deleteCurrentUserDraftWorkspace(
@@ -77,10 +92,11 @@ export async function submitCurrentUserDraftWorkspace(
   }
 
   if (workspace.kyronDraftId) {
-    return workspace;
+    return hydrateCourseSetupCalibration(workspace, user.id);
   }
 
-  assertWorkspaceCanBeSubmitted(workspace);
+  const calibration = await getCourseSetupCalibration(id, user.id);
+  assertWorkspaceCanBeSubmitted(workspace, calibration);
 
   const submittingWorkspace = await startDraftWorkspaceSubmission(
     id,
@@ -94,24 +110,30 @@ export async function submitCurrentUserDraftWorkspace(
   try {
     const alignmentContentSignedId =
       await uploadWorkspaceAttachmentToKyron(id, user.id);
-    const draft = await createDraftWithRequiredPersistence(
-      toCreateDraftRequest(
-        submittingWorkspace,
-        alignmentContentSignedId,
-      ),
+    const draftRequest = toCreateDraftRequest(
+      submittingWorkspace,
+      alignmentContentSignedId,
     );
-    const submittedWorkspace = await completeDraftWorkspaceSubmission(
+    const draft = await createDraftWithRequiredPersistence(draftRequest);
+    const completed = await completeWorkspaceSubmissionWithCalibration(
       id,
       user.id,
       draft.id,
       submissionStatusMessage(draft.status, draft.statusMessage),
+      toCourseSetupSnapshot(draftRequest),
     );
 
-    if (!submittedWorkspace) {
+    if (!completed) {
       throw new Error("The submitted workspace could not be updated.");
     }
 
-    return submittedWorkspace;
+    const submittedWorkspace = await getDraftWorkspaceById(id, user.id);
+
+    if (!submittedWorkspace) {
+      throw new Error("The submitted workspace could not be loaded.");
+    }
+
+    return hydrateCourseSetupCalibration(submittedWorkspace, user.id);
   } catch (error) {
     await recordSubmissionFailure(id, user.id, error);
     throw error;
@@ -119,7 +141,10 @@ export async function submitCurrentUserDraftWorkspace(
 }
 
 export class DraftWorkspaceSubmissionError extends Error {
-  readonly code: "INVALID_WORKSPACE" | "SUBMISSION_IN_PROGRESS";
+  readonly code:
+    | "INVALID_WORKSPACE"
+    | "REVIEW_REQUIRED"
+    | "SUBMISSION_IN_PROGRESS";
   readonly fieldErrors?: Record<string, string[]>;
 
   constructor({
@@ -138,7 +163,10 @@ export class DraftWorkspaceSubmissionError extends Error {
   }
 }
 
-function assertWorkspaceCanBeSubmitted(workspace: DraftWorkspace): void {
+function assertWorkspaceCanBeSubmitted(
+  workspace: DraftWorkspace,
+  calibration: CourseSetupCalibration | null,
+): void {
   if (workspace.status === "submitting") {
     throw submissionInProgressError();
   }
@@ -150,6 +178,14 @@ function assertWorkspaceCanBeSubmitted(workspace: DraftWorkspace): void {
       code: "INVALID_WORKSPACE",
       message: "Complete the required course setup before submitting.",
       fieldErrors,
+    });
+  }
+
+  if (requiresCourseSetupReview(calibration, workspace)) {
+    throw new DraftWorkspaceSubmissionError({
+      code: "REVIEW_REQUIRED",
+      message:
+        "Review and approve the AI-generated course setup before creating the Kyron draft.",
     });
   }
 }
@@ -191,6 +227,17 @@ function toCreateDraftRequest(
   };
 }
 
+function toCourseSetupSnapshot(request: CreateDraftRequest): CourseSetup {
+  return {
+    name: request.name,
+    description: request.description,
+    learningObjective: request.learningObjective,
+    audience: request.audience,
+    assetType: request.assetType,
+    duration: request.duration,
+  };
+}
+
 async function resolveSubmissionRace(
   id: string,
   userId: string,
@@ -198,7 +245,19 @@ async function resolveSubmissionRace(
   const latestWorkspace = await getDraftWorkspaceById(id, userId);
 
   if (latestWorkspace?.kyronDraftId) {
-    return latestWorkspace;
+    return hydrateCourseSetupCalibration(latestWorkspace, userId);
+  }
+
+  if (latestWorkspace) {
+    const calibration = await getCourseSetupCalibration(id, userId);
+
+    if (requiresCourseSetupReview(calibration, latestWorkspace)) {
+      throw new DraftWorkspaceSubmissionError({
+        code: "REVIEW_REQUIRED",
+        message:
+          "Review and approve the AI-generated course setup before creating the Kyron draft.",
+      });
+    }
   }
 
   throw submissionInProgressError();

@@ -18,6 +18,7 @@ export function CourseSourceCard({
   generatorState,
   onGenerate,
   onSourceChange,
+  hasGeneratedSetup,
   sourceText,
   workspaceId,
 }: {
@@ -25,6 +26,7 @@ export function CourseSourceCard({
   generatorState: CourseSetupGeneratorState;
   onGenerate: () => void;
   onSourceChange: (value: string) => void;
+  hasGeneratedSetup: boolean;
   sourceText: string;
   workspaceId: string;
 }) {
@@ -80,7 +82,9 @@ export function CourseSourceCard({
           ) : (
             <>
               <Sparkles aria-hidden="true" />
-              Generate course setup
+              {hasGeneratedSetup
+                ? "Regenerate course setup"
+                : "Generate course setup"}
             </>
           )}
         </Button>
