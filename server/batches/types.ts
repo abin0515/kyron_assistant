@@ -9,7 +9,4 @@ export const BATCH_SETUP_STATUSES = [
 
 export type BatchSetupStatus = (typeof BATCH_SETUP_STATUSES)[number];
 
-export type DeleteDraftBatchResult =
-  | "deleted"
-  | "not_found"
-  | "not_allowed";
+export type DeleteDraftBatchResult = "deleted" | "not_found";

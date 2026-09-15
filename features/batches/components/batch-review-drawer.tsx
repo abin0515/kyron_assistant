@@ -26,7 +26,9 @@ export function BatchReviewDrawer({
   const [setup, setSetup] = useState<BatchCourseSetup>(item.setup);
   const [attachToKyron, setAttachToKyron] = useState(item.attachToKyron);
   const complete = hasRequiredFields(setup);
-  const attachmentSupported = item.sourceFile.type !== "docx";
+  const attachmentSupported = Boolean(
+    item.sourceFile && item.sourceFile.type !== "docx",
+  );
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -62,7 +64,7 @@ export function BatchReviewDrawer({
               Course setup
             </h2>
             <p className="mt-1 truncate text-sm text-muted-foreground">
-              {item.sourceFile.name}
+              {item.sourceFile?.name ?? "Source file deleted"}
             </p>
           </div>
           <Button
@@ -156,8 +158,8 @@ export function BatchReviewDrawer({
                 </span>
                 <span className="text-xs leading-relaxed text-muted-foreground">
                   {attachmentSupported
-                    ? `${item.sourceFile.name} will be transferred only when this workspace is submitted.`
-                    : "DOCX is available for AI course setup analysis but is not supported as a draft attachment."}
+                    ? `${item.sourceFile?.name} will be transferred only when this workspace is submitted.`
+                    : attachmentHelpText(item)}
                 </span>
               </label>
             </div>
@@ -214,4 +216,12 @@ function hasRequiredFields(setup: BatchCourseSetup): boolean {
       setup.learningObjective.trim() &&
       setup.audience.trim(),
   );
+}
+
+function attachmentHelpText(item: BatchDraftItem): string {
+  if (!item.sourceFile) {
+    return "The source file is no longer available in Source Library.";
+  }
+
+  return "DOCX is available for AI course setup analysis but is not supported as a draft attachment.";
 }

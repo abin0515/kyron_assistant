@@ -45,10 +45,10 @@ type BatchWorkspaceRow = {
   duration_seconds: Duration;
   kyron_draft_id: string | number | null;
   record_updated_at: string | Date;
-  source_file_id: string;
-  source_file_name: string;
-  source_file_size: string | number;
-  source_file_type: SourceFileType;
+  source_file_id: string | null;
+  source_file_name: string | null;
+  source_file_size: string | number | null;
+  source_file_type: SourceFileType | null;
   has_attachment: boolean;
   kyron_status: DraftStatus | null;
   kyron_status_message: string | null;
@@ -322,64 +322,34 @@ export async function deleteBatch(
   userId: string,
 ): Promise<DeleteDraftBatchResult> {
   const sql = getDatabase();
-  const rows = (await sql`
-    WITH candidate AS MATERIALIZED (
-      SELECT draft_batches.id
-      FROM draft_batches
-      WHERE draft_batches.id = ${id}
-        AND draft_batches.created_by_id = ${userId}
-        AND NOT EXISTS (
-          SELECT 1
-          FROM draft_workspaces
-          LEFT JOIN drafts
-            ON drafts.kyron_draft_id = draft_workspaces.kyron_draft_id
-            AND drafts.created_by_id = ${userId}
-          WHERE draft_workspaces.batch_id = draft_batches.id
-            AND NOT (
-              (
-                draft_workspaces.kyron_draft_id IS NULL
-                AND draft_workspaces.status IN ('editing', 'error')
-              )
-              OR drafts.kyron_availability = 'unavailable'
-            )
+  const results = await sql.transaction((transaction) => [
+    transaction`
+      UPDATE draft_workspaces
+      SET
+        batch_id = NULL,
+        record_updated_at = NOW()
+      WHERE batch_id IN (
+        SELECT id
+        FROM draft_batches
+        WHERE id = ${id}
+          AND created_by_id = ${userId}
+      )
+        AND created_by_id = ${userId}
+        AND (
+          status IN ('submitting', 'submitted')
+          OR kyron_draft_id IS NOT NULL
         )
-    ),
-    deleted_drafts AS (
-      DELETE FROM drafts
-      WHERE drafts.created_by_id = ${userId}
-        AND drafts.kyron_draft_id IN (
-          SELECT draft_workspaces.kyron_draft_id
-          FROM draft_workspaces
-          JOIN candidate
-            ON candidate.id = draft_workspaces.batch_id
-          WHERE draft_workspaces.kyron_draft_id IS NOT NULL
-        )
-      RETURNING drafts.kyron_draft_id
-    ),
-    deleted_batch AS (
+    `,
+    transaction`
       DELETE FROM draft_batches
-      USING candidate
-      WHERE draft_batches.id = candidate.id
-      RETURNING draft_batches.id
-    )
-    SELECT
-      CASE
-        WHEN NOT EXISTS (
-          SELECT 1 FROM draft_batches
-          WHERE id = ${id} AND created_by_id = ${userId}
-        ) AND NOT EXISTS (SELECT 1 FROM deleted_batch)
-          THEN 'not_found'
-        WHEN EXISTS (SELECT 1 FROM deleted_batch)
-          THEN 'deleted'
-        ELSE 'not_allowed'
-      END AS result,
-      (SELECT COUNT(*) FROM deleted_drafts) AS deleted_draft_count
-  `) as Array<{
-    result: DeleteDraftBatchResult;
-    deleted_draft_count: string | number;
-  }>;
+      WHERE id = ${id}
+        AND created_by_id = ${userId}
+      RETURNING id
+    `,
+  ]);
+  const deletedBatches = results[1] as Array<{ id: string }>;
 
-  return rows[0]?.result ?? "not_found";
+  return deletedBatches[0] ? "deleted" : "not_found";
 }
 
 async function listBatchWorkspaceRows(
@@ -420,7 +390,7 @@ async function listBatchWorkspaceRows(
       drafts.status_message AS kyron_status_message,
       drafts.kyron_availability
     FROM draft_workspaces
-    JOIN LATERAL (
+    LEFT JOIN LATERAL (
       SELECT
         source_files.id AS source_file_id,
         source_files.original_name AS source_file_name,
@@ -462,12 +432,18 @@ async function listBatchWorkspaceRows(
 function toBatchWorkspace(row: BatchWorkspaceRow): BatchWorkspaceItem {
   return {
     id: row.id,
-    sourceFile: {
-      id: row.source_file_id,
-      name: row.source_file_name,
-      size: Number(row.source_file_size),
-      type: row.source_file_type,
-    },
+    sourceFile:
+      row.source_file_id &&
+      row.source_file_name &&
+      row.source_file_size !== null &&
+      row.source_file_type
+        ? {
+            id: row.source_file_id,
+            name: row.source_file_name,
+            size: Number(row.source_file_size),
+            type: row.source_file_type,
+          }
+        : null,
     status: toBatchWorkspaceStatus(row),
     statusMessage: toStatusMessage(row),
     setup: {

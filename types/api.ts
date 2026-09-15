@@ -244,7 +244,10 @@ export type BatchWorkspaceStatus =
 
 export type BatchWorkspaceItem = {
   id: string;
-  sourceFile: Pick<SourceFileListItem, "id" | "name" | "size" | "type">;
+  sourceFile: Pick<
+    SourceFileListItem,
+    "id" | "name" | "size" | "type"
+  > | null;
   status: BatchWorkspaceStatus;
   statusMessage: string;
   setup: CourseSetup;

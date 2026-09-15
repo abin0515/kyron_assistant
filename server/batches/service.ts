@@ -187,6 +187,12 @@ export async function reviewCurrentUserBatchWorkspace(
     throw new BatchWorkspaceNotFoundError();
   }
 
+  if (!batchWorkspace.sourceFile) {
+    throw new BatchValidationError(
+      "This workspace's source file is no longer available in Source Library.",
+    );
+  }
+
   if (attachToKyron && batchWorkspace.sourceFile.type === "docx") {
     throw new BatchValidationError(
       "Only PDF and PPTX files can be attached to a Kyron draft.",

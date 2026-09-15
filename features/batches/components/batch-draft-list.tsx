@@ -141,13 +141,12 @@ function DesktopBatchItem({
           <div className="min-w-0">
             <p
               className="truncate text-sm font-semibold"
-              title={item.sourceFile.name}
+              title={sourceFileName(item)}
             >
-              {item.sourceFile.name}
+              {sourceFileName(item)}
             </p>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              {item.sourceFile.type.toUpperCase()} ·{" "}
-              {formatFileSize(item.sourceFile.size)}
+              {sourceFileDescription(item)}
             </p>
           </div>
         </div>
@@ -198,11 +197,10 @@ function MobileBatchItem(props: BatchItemProps) {
         />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold">
-            {item.sourceFile.name}
+            {sourceFileName(item)}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            {item.sourceFile.type.toUpperCase()} ·{" "}
-            {formatFileSize(item.sourceFile.size)} · {attachmentLabel(item)}
+            {sourceFileDescription(item)} · {attachmentLabel(item)}
           </p>
         </div>
         <StatusBadge status={item.status} />
@@ -245,7 +243,7 @@ function SelectionCheckbox({
 
   return (
     <input
-      aria-label={`Select ${item.setup.name || item.sourceFile.name}`}
+      aria-label={`Select ${item.setup.name || sourceFileName(item)}`}
       checked={selectable && selected}
       className="mt-0.5 size-4 shrink-0 accent-primary"
       disabled={!selectable}
@@ -310,7 +308,7 @@ function ItemActions({
       ) : null}
       {canRemove ? (
         <Button
-          aria-label={`Remove ${item.sourceFile.name}`}
+          aria-label={`Remove ${sourceFileName(item)}`}
           onClick={() => onRemove(item.id)}
           size="icon-sm"
           type="button"
@@ -412,9 +410,25 @@ function formatFileSize(bytes: number): string {
 }
 
 function attachmentLabel(item: BatchDraftItem): string {
+  if (!item.sourceFile) {
+    return "Source unavailable";
+  }
+
   if (item.sourceFile.type === "docx") {
     return "AI only";
   }
 
   return item.attachToKyron ? "Attachment selected" : "No attachment";
+}
+
+function sourceFileName(item: BatchDraftItem): string {
+  return item.sourceFile?.name ?? "Source file deleted";
+}
+
+function sourceFileDescription(item: BatchDraftItem): string {
+  if (!item.sourceFile) {
+    return "No longer in Source Library";
+  }
+
+  return `${item.sourceFile.type.toUpperCase()} · ${formatFileSize(item.sourceFile.size)}`;
 }

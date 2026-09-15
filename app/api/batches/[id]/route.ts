@@ -5,7 +5,6 @@ import {
   getCurrentUserBatch,
 } from "@/server/batches/service";
 import {
-  conflictErrorResponse,
   internalErrorResponse,
   noStoreHeaders,
   notFoundErrorResponse,
@@ -63,13 +62,6 @@ export async function DELETE(
 
     if (result === "not_found") {
       return notFoundErrorResponse("Batch was not found.");
-    }
-
-    if (result === "not_allowed") {
-      return conflictErrorResponse(
-        "A batch cannot be deleted while it contains submitted Kyron drafts.",
-        false,
-      );
     }
 
     return new NextResponse(null, { status: 204, headers: noStoreHeaders });

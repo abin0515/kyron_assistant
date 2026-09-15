@@ -384,10 +384,10 @@ function BatchInspector({
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-semibold">
-                  {workspace.setup.name || workspace.sourceFile.name}
+                  {workspace.setup.name || sourceFileName(workspace)}
                 </span>
                 <span className="mt-1 block truncate text-xs text-muted-foreground">
-                  {workspace.sourceFile.name}
+                  {sourceFileName(workspace)}
                 </span>
               </span>
               <WorkspaceState status={workspace.status} />
@@ -475,7 +475,8 @@ function DeleteBatchDialog({
             </h2>
             <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
               This removes <strong>{batch.name}</strong> and its unsubmitted
-              workspaces. Submitted Kyron drafts prevent batch deletion.
+              workspaces. Submitted workspaces and Kyron drafts remain
+              available on the Drafts page.
             </p>
           </div>
           <Button
@@ -506,6 +507,10 @@ function formatDate(value: string): string {
     month: "short",
     day: "numeric",
   }).format(new Date(value));
+}
+
+function sourceFileName(workspace: BatchRecord["workspaces"][number]): string {
+  return workspace.sourceFile?.name ?? "Source file deleted";
 }
 
 function errorMessage(error: unknown, fallback: string): string {
