@@ -20,7 +20,7 @@ import {
   completeBatchCourseSetupGeneration,
   ensureBatchCourseSetupCalibration,
   failBatchCourseSetupGeneration,
-  markCourseSetupReviewed,
+  setBatchCourseSetupCalibrationSelection,
 } from "@/server/drafts/course-setup-calibrations/repository";
 import { generateCourseSetupWithMetadata } from "@/server/drafts/course-setup/service";
 import { updateCurrentWorkspaceSourceFiles } from "@/server/drafts/workspace-source-files/service";
@@ -30,6 +30,7 @@ import { getSourceFilesByIds } from "@/server/source-files/repository";
 import type {
   CourseSetup,
   DraftBatch,
+  KyronDestination,
   UpdateDraftWorkspaceRequest,
 } from "@/types/api";
 
@@ -39,6 +40,7 @@ const GENERATION_CONCURRENCY = 2;
 export async function createCurrentUserBatch(
   name: string,
   sourceFileIds: string[],
+  destination: KyronDestination,
 ): Promise<DraftBatch> {
   const user = await getCurrentUser();
   const normalizedName = name.trim();
@@ -79,6 +81,7 @@ export async function createCurrentUserBatch(
       workspaceId: randomUUID(),
       sourceFileId,
     })),
+    destination,
   );
 
   const batch = await getBatchById(batchId, user.id);
@@ -179,11 +182,12 @@ export async function generateCurrentUserBatchSetups(
   return getBatchById(batchId, user.id);
 }
 
-export async function reviewCurrentUserBatchWorkspace(
+export async function updateCurrentUserBatchWorkspace(
   batchId: string,
   workspaceId: string,
   setup: CourseSetup,
   attachToKyron: boolean,
+  includeInCalibration: boolean,
 ): Promise<DraftBatch | null> {
   const user = await getCurrentUser();
   const batch = await getBatchById(batchId, user.id);
@@ -231,11 +235,16 @@ export async function reviewCurrentUserBatchWorkspace(
     attachToKyron ? [batchWorkspace.sourceFile.id] : [],
   );
 
-  const reviewed = await markCourseSetupReviewed(workspaceId, user);
+  const selectionSaved = await setBatchCourseSetupCalibrationSelection(
+    batchId,
+    workspaceId,
+    user,
+    includeInCalibration,
+  );
 
-  if (!reviewed) {
+  if (!selectionSaved) {
     throw new BatchValidationError(
-      "This workspace does not have a generated setup to review.",
+      "This workspace does not have a generated setup ready to save.",
     );
   }
 

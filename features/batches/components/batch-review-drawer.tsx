@@ -7,24 +7,35 @@ import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { KyronDestinationField } from "@/features/drafts/workspaces/components/kyron-destination-field";
 import type {
   BatchCourseSetup,
   BatchDraftItem,
 } from "@/features/batches/types";
+import type { KyronDestination } from "@/types/api";
 
 type BatchReviewDrawerProps = {
   item: BatchDraftItem;
   onClose: () => void;
-  onSave: (setup: BatchCourseSetup, attachToKyron: boolean) => void;
+  onDestinationChange: (destination: KyronDestination) => Promise<void>;
+  onSave: (
+    setup: BatchCourseSetup,
+    attachToKyron: boolean,
+    includeInCalibration: boolean,
+  ) => void;
 };
 
 export function BatchReviewDrawer({
   item,
   onClose,
+  onDestinationChange,
   onSave,
 }: BatchReviewDrawerProps) {
   const [setup, setSetup] = useState<BatchCourseSetup>(item.setup);
   const [attachToKyron, setAttachToKyron] = useState(item.attachToKyron);
+  const [includeInCalibration, setIncludeInCalibration] = useState(
+    item.includeInCalibration,
+  );
   const complete = hasRequiredFields(setup);
   const attachmentSupported = Boolean(
     item.sourceFile && item.sourceFile.type !== "docx",
@@ -164,12 +175,44 @@ export function BatchReviewDrawer({
               </label>
             </div>
           </section>
+
+          <section className="rounded-xl border border-border bg-muted/25 p-4">
+            <div className="flex items-start gap-3">
+              <input
+                checked={includeInCalibration}
+                className="mt-0.5 size-4 accent-primary"
+                id="batch-calibration-example"
+                onChange={(event) =>
+                  setIncludeInCalibration(event.target.checked)
+                }
+                type="checkbox"
+              />
+              <label
+                className="grid gap-1"
+                htmlFor="batch-calibration-example"
+              >
+                <span className="text-sm font-semibold">
+                  Use this setup as a calibration example
+                </span>
+                <span className="text-xs leading-relaxed text-muted-foreground">
+                  Save the AI recommendation and final submitted setup to help
+                  improve future course setup suggestions.
+                </span>
+              </label>
+            </div>
+          </section>
+
+          <KyronDestinationField
+            description="This workspace can use a different destination from the batch default."
+            destination={item.kyronDestination}
+            onChange={onDestinationChange}
+          />
         </div>
 
         <footer className="border-t border-border bg-card px-5 py-4 sm:px-6">
           {!complete ? (
             <p className="mb-3 text-xs text-destructive" role="alert">
-              Complete all four course fields before marking this draft ready.
+              Complete all four course fields before saving these changes.
             </p>
           ) : null}
           <div className="flex justify-end gap-2">
@@ -179,12 +222,16 @@ export function BatchReviewDrawer({
             <Button
               disabled={!complete}
               onClick={() =>
-                onSave(setup, attachmentSupported && attachToKyron)
+                onSave(
+                  setup,
+                  attachmentSupported && attachToKyron,
+                  includeInCalibration,
+                )
               }
               type="button"
             >
               <Save aria-hidden="true" />
-              Save and mark ready
+              Save changes
             </Button>
           </div>
         </footer>
@@ -197,6 +244,7 @@ export function BatchReviewDrawer({
     value: BatchCourseSetup[Key],
   ) {
     setSetup((current) => ({ ...current, [key]: value }));
+    setIncludeInCalibration(false);
   }
 }
 

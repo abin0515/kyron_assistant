@@ -48,6 +48,7 @@ export function courseSetupReviewResult(
 
 export function requiresCourseSetupReview(
   calibration: {
+    reviewRequired?: boolean;
     reviewStatus: "needs_review" | "reviewed";
     reviewedSetup: CourseSetupFields | null;
   } | null,
@@ -55,6 +56,7 @@ export function requiresCourseSetupReview(
 ): boolean {
   return Boolean(
     calibration &&
+      calibration.reviewRequired !== false &&
       (calibration.reviewStatus !== "reviewed" ||
         !calibration.reviewedSetup ||
         !courseSetupsMatch(currentSetup, calibration.reviewedSetup)),

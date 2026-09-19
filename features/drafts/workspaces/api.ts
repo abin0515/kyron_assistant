@@ -4,6 +4,9 @@ import type {
   DraftWorkspaceListResponse,
   GenerateCourseSetupRequest,
   GenerateCourseSetupResponse,
+  KyronDestination,
+  SubmitDraftWorkspaceRequest,
+  UpdateKyronDestinationRequest,
   UpdateWorkspaceSourceFilesRequest,
   UpdateDraftWorkspaceRequest,
   WorkspaceSourceFileListResponse,
@@ -57,6 +60,30 @@ export async function updateDraftWorkspace(
     credentials: "same-origin",
     signal,
   });
+
+  return parseJsonResponse<DraftWorkspace>(response);
+}
+
+export async function updateWorkspaceKyronDestination(
+  id: string,
+  destination: KyronDestination,
+  signal?: AbortSignal,
+): Promise<DraftWorkspace> {
+  const body = { destination } satisfies UpdateKyronDestinationRequest;
+  const response = await fetch(
+    `/api/draft-workspaces/${id}/kyron-destination`,
+    {
+      method: "PATCH",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+      cache: "no-store",
+      credentials: "same-origin",
+      signal,
+    },
+  );
 
   return parseJsonResponse<DraftWorkspace>(response);
 }
@@ -158,33 +185,21 @@ export async function generateCourseSetup(
   return result.workspace;
 }
 
-export async function markCourseSetupReviewed(
-  id: string,
-  signal?: AbortSignal,
-): Promise<DraftWorkspace> {
-  const response = await fetch(
-    `/api/draft-workspaces/${id}/course-setup-review`,
-    {
-      method: "POST",
-      headers: { Accept: "application/json" },
-      cache: "no-store",
-      credentials: "same-origin",
-      signal,
-    },
-  );
-
-  return parseJsonResponse<DraftWorkspace>(response);
-}
-
 export async function submitDraftWorkspace(
   id: string,
+  includeInCalibration: boolean,
   signal?: AbortSignal,
 ): Promise<DraftWorkspace> {
+  const body = {
+    includeInCalibration,
+  } satisfies SubmitDraftWorkspaceRequest;
   const response = await fetch(`/api/draft-workspaces/${id}/submit`, {
     method: "POST",
     headers: {
       Accept: "application/json",
+      "Content-Type": "application/json",
     },
+    body: JSON.stringify(body),
     cache: "no-store",
     credentials: "same-origin",
     signal,

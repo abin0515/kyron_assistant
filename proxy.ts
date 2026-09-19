@@ -10,6 +10,7 @@ const isProtectedRoute = createRouteMatcher([
   "/api/drafts(.*)",
   "/api/draft-workspaces(.*)",
   "/api/organization(.*)",
+  "/api/kyron-folders(.*)",
   "/api/source-files(.*)",
   "/api/source-files/complete",
   "/api/uploads(.*)",

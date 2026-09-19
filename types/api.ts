@@ -59,6 +59,16 @@ export type CourseSetup = {
   duration: Duration;
 };
 
+export type KyronFolderPathItem = {
+  id: number;
+  name: string;
+};
+
+export type KyronDestination = {
+  folderId: number | null;
+  path: KyronFolderPathItem[];
+};
+
 export type GenerateCourseSetupRequest = {
   workspaceId: string;
 };
@@ -69,6 +79,7 @@ export type GenerateCourseSetupResponse = {
 
 export type CreateDraftRequest = CourseSetup & {
   alignmentContentSignedId?: string;
+  assetFolderId?: number;
 };
 
 export type SignUploadRequest = {
@@ -117,6 +128,7 @@ export type DraftWorkspace = CourseSetup & {
   sourceText: string;
   kyronDraftId: number | null;
   submittedAt: string | null;
+  kyronDestination: KyronDestination;
   courseSetupCalibration: CourseSetupCalibration | null;
   createdBy: {
     id: string;
@@ -137,6 +149,7 @@ export type CourseSetupCalibration = {
   generatedAt: string;
   promptVersion: string;
   model: string;
+  reviewRequired: boolean;
   reviewStatus: CourseSetupReviewStatus;
   reviewResult: CourseSetupReviewResult | null;
   reviewedSetup: CourseSetup | null;
@@ -149,6 +162,13 @@ export type CourseSetupCalibration = {
   submittedSetup: CourseSetup | null;
   submittedAt: string | null;
   kyronDraftId: number | null;
+  includeInCalibration: boolean;
+  calibrationSelectedBy: {
+    id: string;
+    name: string;
+    email: string;
+  } | null;
+  calibrationSelectedAt: string | null;
 };
 
 export type DraftWorkspaceSummary = Pick<
@@ -170,6 +190,14 @@ export type UpdateDraftWorkspaceRequest = Partial<
     sourceText: string;
   }
 >;
+
+export type UpdateKyronDestinationRequest = {
+  destination: KyronDestination;
+};
+
+export type SubmitDraftWorkspaceRequest = {
+  includeInCalibration: boolean;
+};
 
 export type DraftWorkspaceListResponse = {
   workspaces: DraftWorkspaceSummary[];
@@ -259,7 +287,6 @@ export type BatchWorkspaceStatus =
   | "setup_pending"
   | "setup_generating"
   | "setup_error"
-  | "needs_review"
   | "ready"
   | "submitting"
   | "generating"
@@ -276,6 +303,8 @@ export type BatchWorkspaceItem = {
   statusMessage: string;
   setup: CourseSetup;
   attachToKyron: boolean;
+  includeInCalibration: boolean;
+  kyronDestination: KyronDestination;
   kyronDraftId: number | null;
   updatedAt: string;
 };
@@ -300,14 +329,16 @@ export type DraftBatchResponse = {
 export type CreateDraftBatchRequest = {
   name: string;
   sourceFileIds: string[];
+  kyronDestination?: KyronDestination;
 };
 
 export type GenerateDraftBatchRequest = {
   workspaceIds?: string[];
 };
 
-export type ReviewBatchWorkspaceRequest = CourseSetup & {
+export type UpdateBatchWorkspaceRequest = CourseSetup & {
   attachToKyron: boolean;
+  includeInCalibration: boolean;
 };
 
 export type DraftListResponse = {
@@ -322,6 +353,7 @@ export type ApiErrorCode =
   | "UPLOAD_FAILED"
   | "KYRON_UNAUTHORIZED"
   | "KYRON_NOT_FOUND"
+  | "KYRON_CONFLICT"
   | "KYRON_RATE_LIMITED"
   | "KYRON_UNAVAILABLE"
   | "KYRON_INVALID_RESPONSE"
@@ -342,4 +374,26 @@ export type OrganizationResponse = {
   organization: {
     name: string;
   };
+};
+
+export type KyronAssetFolderItem = {
+  id: number;
+  name: string;
+  parentId: number | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type KyronAssetFolderListResponse = {
+  folders: KyronAssetFolderItem[];
+  pagination: PaginationMeta;
+};
+
+export type CreateKyronAssetFolderRequest = {
+  name: string;
+  parentId?: number;
+};
+
+export type KyronAssetFolderResponse = {
+  folder: KyronAssetFolderItem;
 };

@@ -9,10 +9,10 @@ vi.mock("@/server/drafts/workspaces/repository", () => ({
   listDraftWorkspacesByUser: vi.fn(),
   startDraftWorkspaceSubmission: vi.fn(),
   updateDraftWorkspace: vi.fn(),
+  updateDraftWorkspaceKyronDestination: vi.fn(),
 }));
 vi.mock("@/server/drafts/course-setup-calibrations/repository", () => ({
   completeWorkspaceSubmissionWithCalibration: vi.fn(),
-  getCourseSetupCalibration: vi.fn(),
 }));
 vi.mock("@/server/drafts/course-setup-calibrations/service", () => ({
   hydrateCourseSetupCalibration: vi.fn(
@@ -31,24 +31,22 @@ vi.mock("@/server/identity/current-user", () => ({
 
 import {
   completeWorkspaceSubmissionWithCalibration,
-  getCourseSetupCalibration,
 } from "@/server/drafts/course-setup-calibrations/repository";
 import { createDraftWithRequiredPersistence } from "@/server/drafts/kyron-drafts/service";
 import { uploadWorkspaceAttachmentToKyron } from "@/server/drafts/workspace-source-files/kyron-attachment";
 import {
+  failDraftWorkspaceSubmission,
   getDraftWorkspaceById,
   startDraftWorkspaceSubmission,
+  updateDraftWorkspaceKyronDestination,
 } from "@/server/drafts/workspaces/repository";
 import {
-  DraftWorkspaceSubmissionError,
   submitCurrentUserDraftWorkspace,
+  updateCurrentUserWorkspaceKyronDestination,
 } from "@/server/drafts/workspaces/service";
 import { getCurrentUser } from "@/server/identity/current-user";
-import type {
-  CourseSetupCalibration,
-  Draft,
-  DraftWorkspace,
-} from "@/types/api";
+import { KyronClientError } from "@/server/kyron/client";
+import type { Draft, DraftWorkspace } from "@/types/api";
 
 const user = {
   id: "user_123",
@@ -68,6 +66,7 @@ const workspace: DraftWorkspace = {
   duration: 900,
   kyronDraftId: null,
   submittedAt: null,
+  kyronDestination: { folderId: null, path: [] },
   courseSetupCalibration: null,
   createdBy: user,
   recordCreatedAt: "2026-09-14T12:00:00.000Z",
@@ -91,26 +90,10 @@ const generatedSetup = {
   assetType: "lesson" as const,
   duration: 900 as const,
 };
-const reviewedCalibration: CourseSetupCalibration = {
-  generatedSetup,
-  generatedAt: "2026-09-14T12:00:00.000Z",
-  promptVersion: "course-setup-v1",
-  model: "gpt-test",
-  reviewStatus: "reviewed",
-  reviewResult: "approved_as_is",
-  reviewedSetup: generatedSetup,
-  reviewedBy: user,
-  reviewedAt: "2026-09-14T12:05:00.000Z",
-  submittedSetup: null,
-  submittedAt: null,
-  kyronDraftId: null,
-};
-
 describe("workspace submission calibration", () => {
   beforeEach(() => {
     vi.mocked(getCurrentUser).mockResolvedValue(user);
     vi.mocked(getDraftWorkspaceById).mockResolvedValue(workspace);
-    vi.mocked(getCourseSetupCalibration).mockResolvedValue(null);
     vi.mocked(startDraftWorkspaceSubmission).mockResolvedValue(workspace);
     vi.mocked(uploadWorkspaceAttachmentToKyron).mockResolvedValue(
       "signed-attachment",
@@ -118,6 +101,9 @@ describe("workspace submission calibration", () => {
     vi.mocked(createDraftWithRequiredPersistence).mockResolvedValue(kyronDraft);
     vi.mocked(completeWorkspaceSubmissionWithCalibration).mockResolvedValue(
       true,
+    );
+    vi.mocked(updateDraftWorkspaceKyronDestination).mockResolvedValue(
+      workspace,
     );
   });
 
@@ -128,29 +114,7 @@ describe("workspace submission calibration", () => {
     expect(createDraftWithRequiredPersistence).toHaveBeenCalled();
   });
 
-  it("blocks an AI-generated workspace that still needs review", async () => {
-    vi.mocked(getCourseSetupCalibration).mockResolvedValue({
-      ...reviewedCalibration,
-      reviewStatus: "needs_review",
-      reviewResult: null,
-      reviewedSetup: null,
-      reviewedBy: null,
-      reviewedAt: null,
-    });
-
-    await expect(
-      submitCurrentUserDraftWorkspace(workspace.id),
-    ).rejects.toMatchObject({
-      code: "REVIEW_REQUIRED",
-    } satisfies Partial<DraftWorkspaceSubmissionError>);
-    expect(startDraftWorkspaceSubmission).not.toHaveBeenCalled();
-  });
-
   it("snapshots exactly the normalized setup sent to Kyron", async () => {
-    vi.mocked(getCourseSetupCalibration).mockResolvedValue(
-      reviewedCalibration,
-    );
-
     await submitCurrentUserDraftWorkspace(workspace.id);
 
     expect(createDraftWithRequiredPersistence).toHaveBeenCalledWith({
@@ -163,6 +127,107 @@ describe("workspace submission calibration", () => {
       kyronDraft.id,
       "Generating",
       generatedSetup,
+      false,
+    );
+  });
+
+  it("records an optional calibration choice only with successful submission", async () => {
+    await submitCurrentUserDraftWorkspace(workspace.id, true);
+
+    expect(completeWorkspaceSubmissionWithCalibration).toHaveBeenCalledWith(
+      workspace.id,
+      user.id,
+      kyronDraft.id,
+      "Generating",
+      generatedSetup,
+      true,
+    );
+  });
+
+  it("sends the workspace destination without adding it to the setup snapshot", async () => {
+    const workspaceInFolder: DraftWorkspace = {
+      ...workspace,
+      kyronDestination: {
+        folderId: 6121,
+        path: [
+          { id: 612, name: "EM 612" },
+          { id: 6121, name: "Module 1" },
+        ],
+      },
+    };
+    vi.mocked(getDraftWorkspaceById).mockResolvedValue(workspaceInFolder);
+    vi.mocked(startDraftWorkspaceSubmission).mockResolvedValue(
+      workspaceInFolder,
+    );
+
+    await submitCurrentUserDraftWorkspace(workspace.id);
+
+    expect(createDraftWithRequiredPersistence).toHaveBeenCalledWith({
+      ...generatedSetup,
+      alignmentContentSignedId: "signed-attachment",
+      assetFolderId: 6121,
+    });
+    expect(completeWorkspaceSubmissionWithCalibration).toHaveBeenCalledWith(
+      workspace.id,
+      user.id,
+      kyronDraft.id,
+      "Generating",
+      generatedSetup,
+      false,
+    );
+  });
+
+  it("updates an unsubmitted workspace destination independently", async () => {
+    const destination = {
+      folderId: 6121,
+      path: [
+        { id: 612, name: "EM 612" },
+        { id: 6121, name: "Module 1" },
+      ],
+    };
+
+    await updateCurrentUserWorkspaceKyronDestination(
+      workspace.id,
+      destination,
+    );
+
+    expect(updateDraftWorkspaceKyronDestination).toHaveBeenCalledWith(
+      workspace.id,
+      user.id,
+      destination,
+    );
+  });
+
+  it("returns a clear recoverable state when the selected folder is unavailable", async () => {
+    const workspaceInFolder: DraftWorkspace = {
+      ...workspace,
+      kyronDestination: {
+        folderId: 6121,
+        path: [{ id: 6121, name: "Module 1" }],
+      },
+    };
+    vi.mocked(getDraftWorkspaceById).mockResolvedValue(workspaceInFolder);
+    vi.mocked(startDraftWorkspaceSubmission).mockResolvedValue(
+      workspaceInFolder,
+    );
+    vi.mocked(createDraftWithRequiredPersistence).mockRejectedValue(
+      new KyronClientError({
+        code: "KYRON_NOT_FOUND",
+        message: "The requested Kyron resource was not found.",
+        retryable: false,
+        upstreamStatus: 404,
+      }),
+    );
+
+    await expect(
+      submitCurrentUserDraftWorkspace(workspace.id),
+    ).rejects.toThrow(
+      "The selected Kyron folder is no longer available. Choose another destination and try again.",
+    );
+    expect(failDraftWorkspaceSubmission).toHaveBeenCalledWith(
+      workspace.id,
+      user.id,
+      "The selected Kyron folder is no longer available. Choose another destination and try again.",
     );
   });
 });

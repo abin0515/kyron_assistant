@@ -19,27 +19,20 @@ import { useCourseSetupGenerator } from "@/features/drafts/workspaces/hooks/use-
 import { useWorkspaceAutosave } from "@/features/drafts/workspaces/hooks/use-workspace-autosave";
 import {
   getDraftWorkspace,
-  markCourseSetupReviewed,
   submitDraftWorkspace,
+  updateWorkspaceKyronDestination,
 } from "@/features/drafts/workspaces/api";
-import {
-  courseSetupsMatch,
-  shouldInvalidateCourseSetupReview,
-} from "@/lib/course-setup";
-import type { DraftWorkspace } from "@/types/api";
+import { courseSetupsMatch } from "@/lib/course-setup";
+import type { DraftWorkspace, KyronDestination } from "@/types/api";
 
 export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
   const router = useRouter();
-  const reviewControllerRef = useRef<AbortController | null>(null);
   const submissionControllerRef = useRef<AbortController | null>(null);
+  const [includeInCalibration, setIncludeInCalibration] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
-  const [regenerationDialog, setRegenerationDialog] = useState<
-    "edited" | "reviewed" | null
-  >(null);
+  const [regenerationDialog, setRegenerationDialog] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [reviewBusy, setReviewBusy] = useState(false);
-  const [reviewError, setReviewError] = useState<string | null>(null);
   const [submissionBusy, setSubmissionBusy] = useState(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const [workspace, setWorkspace] = useState<DraftWorkspace | null>(null);
@@ -58,6 +51,10 @@ export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
       .then((loadedWorkspace) => {
         if (!controller.signal.aborted) {
           setWorkspace(loadedWorkspace);
+          setIncludeInCalibration(
+            loadedWorkspace.courseSetupCalibration?.includeInCalibration ??
+              false,
+          );
         }
       })
       .catch((error: unknown) => {
@@ -76,7 +73,6 @@ export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
 
   useEffect(
     () => () => {
-      reviewControllerRef.current?.abort();
       submissionControllerRef.current?.abort();
     },
     [],
@@ -85,10 +81,9 @@ export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
   function handleWorkspaceChange(nextWorkspace: DraftWorkspace) {
     setFieldErrors({});
     setSubmissionError(null);
-    setReviewError(null);
-    const workspaceWithCurrentReview = invalidateLocalReview(nextWorkspace);
-    setWorkspace(workspaceWithCurrentReview);
-    autosave.queueSave(workspaceWithCurrentReview);
+    setIncludeInCalibration(false);
+    setWorkspace(nextWorkspace);
+    autosave.queueSave(nextWorkspace);
   }
 
   function handleSourceChange(sourceText: string) {
@@ -100,6 +95,27 @@ export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
     handleWorkspaceChange({ ...workspace, sourceText });
   }
 
+  async function handleDestinationChange(destination: KyronDestination) {
+    if (!workspace) {
+      return;
+    }
+
+    const saved = await updateWorkspaceKyronDestination(
+      workspace.id,
+      destination,
+    );
+
+    setWorkspace((current) =>
+      current
+        ? {
+            ...current,
+            kyronDestination: saved.kyronDestination,
+            recordUpdatedAt: saved.recordUpdatedAt,
+          }
+        : current,
+    );
+  }
+
   function handleGenerateRequest() {
     if (!workspace) {
       return;
@@ -107,16 +123,11 @@ export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
 
     const calibration = workspace.courseSetupCalibration;
 
-    if (calibration?.reviewStatus === "reviewed") {
-      setRegenerationDialog("reviewed");
-      return;
-    }
-
     if (
       calibration &&
       !courseSetupsMatch(workspace, calibration.generatedSetup)
     ) {
-      setRegenerationDialog("edited");
+      setRegenerationDialog(true);
       return;
     }
 
@@ -128,7 +139,7 @@ export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
       return;
     }
 
-    setRegenerationDialog(null);
+    setRegenerationDialog(false);
 
     try {
       const savedWorkspace = await autosave.saveNow(workspace);
@@ -138,42 +149,10 @@ export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
 
       if (generatedWorkspace) {
         setWorkspace(generatedWorkspace);
+        setIncludeInCalibration(false);
       }
     } catch {
       // Autosave exposes its own actionable error state.
-    }
-  }
-
-  async function handleMarkReviewed() {
-    if (!workspace || reviewBusy) {
-      return;
-    }
-
-    reviewControllerRef.current?.abort();
-    const controller = new AbortController();
-    reviewControllerRef.current = controller;
-    setReviewBusy(true);
-    setReviewError(null);
-
-    try {
-      const savedWorkspace = await autosave.saveNow(workspace);
-      const reviewedWorkspace = await markCourseSetupReviewed(
-        savedWorkspace.id,
-        controller.signal,
-      );
-
-      if (!controller.signal.aborted) {
-        setWorkspace(reviewedWorkspace);
-      }
-    } catch (error) {
-      if (!controller.signal.aborted) {
-        setReviewError(messageFromError(error));
-      }
-    } finally {
-      if (reviewControllerRef.current === controller) {
-        reviewControllerRef.current = null;
-        setReviewBusy(false);
-      }
     }
   }
 
@@ -193,6 +172,7 @@ export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
       const savedWorkspace = await autosave.saveNow(workspace);
       const submittedWorkspace = await submitDraftWorkspace(
         savedWorkspace.id,
+        includeInCalibration,
         controller.signal,
       );
 
@@ -223,8 +203,7 @@ export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
     return <ErrorState message={loadError || "Draft workspace not found."} />;
   }
 
-  const locked =
-    Boolean(workspace.kyronDraftId) || submissionBusy || reviewBusy;
+  const locked = Boolean(workspace.kyronDraftId) || submissionBusy;
   const ready = hasRequiredCourseSetup(workspace);
 
   return (
@@ -276,18 +255,19 @@ export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
             workspaceId={workspace.id}
           />
           <WorkspaceForm
+            destinationDisabled={locked}
             disabled={locked || generator.state.phase === "generating"}
             fieldErrors={fieldErrors}
-            onMarkReviewed={() => void handleMarkReviewed()}
+            onDestinationChange={handleDestinationChange}
             onChange={handleWorkspaceChange}
-            reviewBusy={reviewBusy}
-            reviewError={reviewError}
             workspace={workspace}
           />
         </div>
 
         <WorkspaceStatusPanel
           autosaveState={autosave.state}
+          includeInCalibration={includeInCalibration}
+          onCalibrationSelectionChange={setIncludeInCalibration}
           onCheckNow={polling.checkNow}
           onDeleted={() => {
             router.replace("/drafts");
@@ -303,8 +283,7 @@ export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
       </div>
       {regenerationDialog ? (
         <RegenerationDialog
-          kind={regenerationDialog}
-          onCancel={() => setRegenerationDialog(null)}
+          onCancel={() => setRegenerationDialog(false)}
           onConfirm={() => void handleGenerate()}
         />
       ) : null}
@@ -312,40 +291,13 @@ export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
   );
 }
 
-function invalidateLocalReview(workspace: DraftWorkspace): DraftWorkspace {
-  const calibration = workspace.courseSetupCalibration;
-
-  if (
-    !calibration ||
-    !shouldInvalidateCourseSetupReview(calibration, workspace)
-  ) {
-    return workspace;
-  }
-
-  return {
-    ...workspace,
-    courseSetupCalibration: {
-      ...calibration,
-      reviewStatus: "needs_review",
-      reviewResult: null,
-      reviewedSetup: null,
-      reviewedBy: null,
-      reviewedAt: null,
-    },
-  };
-}
-
 function RegenerationDialog({
-  kind,
   onCancel,
   onConfirm,
 }: {
-  kind: "edited" | "reviewed";
   onCancel: () => void;
   onConfirm: () => void;
 }) {
-  const reviewed = kind === "reviewed";
-
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/45 p-4">
       <section
@@ -355,12 +307,11 @@ function RegenerationDialog({
         role="dialog"
       >
         <h2 className="text-lg font-bold" id="regenerate-course-setup-title">
-          {reviewed ? "Start a new review cycle?" : "Regenerate course setup?"}
+          Regenerate course setup?
         </h2>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-          {reviewed
-            ? "This setup has already been reviewed. Regenerating will replace the AI recommendation and start a new review cycle."
-            : "You have edited the current course setup. Regenerating will replace those changes with a new AI recommendation."}
+          You have edited the current course setup. Regenerating will replace
+          those changes with a new AI recommendation.
         </p>
         <div className="mt-5 flex justify-end gap-2">
           <Button onClick={onCancel} type="button" variant="outline">

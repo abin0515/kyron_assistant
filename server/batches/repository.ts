@@ -19,6 +19,7 @@ import type {
   DraftStatus,
   DraftWorkspaceStatus,
   Duration,
+  KyronDestination,
   KyronAvailability,
   SourceFileType,
 } from "@/types/api";
@@ -44,12 +45,15 @@ type BatchWorkspaceRow = {
   asset_type: AssetType;
   duration_seconds: Duration;
   kyron_draft_id: string | number | null;
+  kyron_asset_folder_id: string | number | null;
+  kyron_asset_folder_path: unknown;
   record_updated_at: string | Date;
   source_file_id: string | null;
   source_file_name: string | null;
   source_file_size: string | number | null;
   source_file_type: SourceFileType | null;
   has_attachment: boolean;
+  include_in_calibration: boolean;
   kyron_status: DraftStatus | null;
   kyron_status_message: string | null;
   kyron_availability: KyronAvailability | null;
@@ -60,6 +64,7 @@ export async function createBatchWithWorkspaces(
   name: string,
   user: CurrentUser,
   items: Array<{ workspaceId: string; sourceFileId: string }>,
+  destination: KyronDestination,
 ): Promise<void> {
   const sql = getDatabase();
 
@@ -87,6 +92,8 @@ export async function createBatchWithWorkspaces(
           batch_id,
           setup_status,
           setup_status_message,
+          kyron_asset_folder_id,
+          kyron_asset_folder_path,
           created_by_id,
           created_by_name,
           created_by_email
@@ -96,6 +103,8 @@ export async function createBatchWithWorkspaces(
           ${batchId},
           'pending',
           'Waiting to generate a course setup.',
+          ${destination.folderId},
+          ${JSON.stringify(destination.path)}::JSONB,
           ${user.id},
           ${user.name},
           ${user.email}
@@ -252,6 +261,8 @@ async function listBatchWorkspaceRows(
       draft_workspaces.asset_type,
       draft_workspaces.duration_seconds,
       draft_workspaces.kyron_draft_id,
+      draft_workspaces.kyron_asset_folder_id,
+      draft_workspaces.kyron_asset_folder_path,
       draft_workspaces.record_updated_at,
       ai_source.source_file_id,
       ai_source.source_file_name,
@@ -263,6 +274,10 @@ async function listBatchWorkspaceRows(
         WHERE attachment.workspace_id = draft_workspaces.id
           AND attachment.usage = 'kyron_attachment'
       ) AS has_attachment,
+      COALESCE(
+        course_setup_calibrations.include_in_calibration,
+        FALSE
+      ) AS include_in_calibration,
       drafts.status AS kyron_status,
       drafts.status_message AS kyron_status_message,
       drafts.kyron_availability
@@ -288,6 +303,8 @@ async function listBatchWorkspaceRows(
     LEFT JOIN drafts
       ON drafts.kyron_draft_id = draft_workspaces.kyron_draft_id
       AND drafts.created_by_id = $1
+    LEFT JOIN course_setup_calibrations
+      ON course_setup_calibrations.workspace_id = draft_workspaces.id
     WHERE draft_workspaces.created_by_id = $1
       AND draft_workspaces.batch_id IS NOT NULL
       AND ($2::UUID IS NULL OR draft_workspaces.batch_id = $2::UUID)
@@ -332,6 +349,11 @@ function toBatchWorkspace(row: BatchWorkspaceRow): BatchWorkspaceItem {
       duration: Number(row.duration_seconds) as Duration,
     },
     attachToKyron: row.has_attachment,
+    includeInCalibration: row.include_in_calibration,
+    kyronDestination: {
+      folderId: toNullableNumber(row.kyron_asset_folder_id),
+      path: toKyronFolderPath(row.kyron_asset_folder_path),
+    },
     kyronDraftId: toNullableNumber(row.kyron_draft_id),
     updatedAt: toIsoString(row.record_updated_at),
   };
@@ -340,6 +362,10 @@ function toBatchWorkspace(row: BatchWorkspaceRow): BatchWorkspaceItem {
 function toBatchWorkspaceStatus(row: BatchWorkspaceRow): BatchWorkspaceStatus {
   if (row.workspace_status === "submitting") {
     return "submitting";
+  }
+
+  if (row.workspace_status === "error") {
+    return "kyron_error";
   }
 
   if (row.workspace_status === "submitted") {
@@ -361,11 +387,10 @@ function toBatchWorkspaceStatus(row: BatchWorkspaceRow): BatchWorkspaceStatus {
     return "setup_error";
   }
 
-  if (row.setup_status === "needs_review") {
-    return "needs_review";
-  }
-
-  if (row.setup_status === "reviewed") {
+  if (
+    row.setup_status === "needs_review" ||
+    row.setup_status === "reviewed"
+  ) {
     return "ready";
   }
 
@@ -373,6 +398,10 @@ function toBatchWorkspaceStatus(row: BatchWorkspaceRow): BatchWorkspaceStatus {
 }
 
 function toStatusMessage(row: BatchWorkspaceRow): string {
+  if (row.workspace_status === "error") {
+    return row.workspace_status_message || row.setup_status_message;
+  }
+
   if (row.workspace_status === "submitted") {
     return row.kyron_status_message || row.workspace_status_message;
   }
@@ -386,4 +415,28 @@ function toIsoString(value: string | Date): string {
 
 function toNullableNumber(value: string | number | null): number | null {
   return value === null ? null : Number(value);
+}
+
+function toKyronFolderPath(value: unknown): KyronDestination["path"] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((item) => {
+    if (
+      !item ||
+      typeof item !== "object" ||
+      !("id" in item) ||
+      !("name" in item) ||
+      typeof item.id !== "number" ||
+      !Number.isSafeInteger(item.id) ||
+      item.id <= 0 ||
+      typeof item.name !== "string" ||
+      !item.name
+    ) {
+      return [];
+    }
+
+    return [{ id: item.id, name: item.name }];
+  });
 }

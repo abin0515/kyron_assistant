@@ -10,7 +10,16 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { createBatch } from "@/features/batches/api";
 import { BatchSourcePicker } from "@/features/batches/components/batch-source-picker";
-import type { SourceFileListItem } from "@/types/api";
+import { KyronDestinationField } from "@/features/drafts/workspaces/components/kyron-destination-field";
+import type {
+  KyronDestination,
+  SourceFileListItem,
+} from "@/types/api";
+
+const TOP_LEVEL_LIBRARY: KyronDestination = {
+  folderId: null,
+  path: [],
+};
 
 export function NewBatchPage() {
   const router = useRouter();
@@ -18,6 +27,9 @@ export function NewBatchPage() {
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [kyronDestination, setKyronDestination] = useState<KyronDestination>(
+    TOP_LEVEL_LIBRARY,
+  );
   const [selectedSources, setSelectedSources] = useState<SourceFileListItem[]>(
     [],
   );
@@ -35,6 +47,7 @@ export function NewBatchPage() {
       const batch = await createBatch({
         name: batchName,
         sourceFileIds: selectedSourceIds,
+        kyronDestination,
       });
       router.push(`/batches/${batch.id}`);
     } catch (createError) {
@@ -163,6 +176,13 @@ export function NewBatchPage() {
               </button>
             )}
           </section>
+
+          <KyronDestinationField
+            description="This default is applied to every workspace created in the batch. You can change individual destinations later."
+            destination={kyronDestination}
+            label="Default Kyron destination"
+            onChange={setKyronDestination}
+          />
 
           <CreationFlow selectedCount={selectedSources.length} />
         </div>

@@ -12,7 +12,7 @@ vi.mock("@/server/drafts/course-setup-calibrations/repository", () => ({
   completeBatchCourseSetupGeneration: vi.fn(),
   ensureBatchCourseSetupCalibration: vi.fn(),
   failBatchCourseSetupGeneration: vi.fn(),
-  markCourseSetupReviewed: vi.fn(),
+  setBatchCourseSetupCalibrationSelection: vi.fn(),
 }));
 vi.mock("@/server/drafts/course-setup/service", () => ({
   generateCourseSetupWithMetadata: vi.fn(),
@@ -30,21 +30,26 @@ vi.mock("@/server/source-files/repository", () => ({
   getSourceFilesByIds: vi.fn(),
 }));
 
-import { getBatchById } from "@/server/batches/repository";
+import {
+  createBatchWithWorkspaces,
+  getBatchById,
+} from "@/server/batches/repository";
 import {
   claimBatchCourseSetupGeneration,
   completeBatchCourseSetupGeneration,
   ensureBatchCourseSetupCalibration,
-  markCourseSetupReviewed,
+  setBatchCourseSetupCalibrationSelection,
 } from "@/server/drafts/course-setup-calibrations/repository";
 import { generateCourseSetupWithMetadata } from "@/server/drafts/course-setup/service";
 import { updateCurrentWorkspaceSourceFiles } from "@/server/drafts/workspace-source-files/service";
 import { updateDraftWorkspace } from "@/server/drafts/workspaces/repository";
 import {
+  createCurrentUserBatch,
   generateCurrentUserBatchSetups,
-  reviewCurrentUserBatchWorkspace,
+  updateCurrentUserBatchWorkspace,
 } from "@/server/batches/service";
 import { getCurrentUser } from "@/server/identity/current-user";
+import { getSourceFilesByIds } from "@/server/source-files/repository";
 import type { CourseSetup, DraftBatch, DraftWorkspace } from "@/types/api";
 
 const user = {
@@ -80,6 +85,8 @@ const batch: DraftBatch = {
       statusMessage: "Waiting to generate a course setup.",
       setup,
       attachToKyron: false,
+      includeInCalibration: false,
+      kyronDestination: { folderId: null, path: [] },
       kyronDraftId: null,
       updatedAt: "2026-09-14T12:00:00.000Z",
     },
@@ -93,6 +100,7 @@ const workspace: DraftWorkspace = {
   sourceText: "",
   kyronDraftId: null,
   submittedAt: null,
+  kyronDestination: { folderId: null, path: [] },
   courseSetupCalibration: null,
   createdBy: user,
   recordCreatedAt: "2026-09-14T12:00:00.000Z",
@@ -114,7 +122,39 @@ describe("batch course setup calibration", () => {
     vi.mocked(ensureBatchCourseSetupCalibration).mockResolvedValue();
     vi.mocked(updateDraftWorkspace).mockResolvedValue(workspace);
     vi.mocked(updateCurrentWorkspaceSourceFiles).mockResolvedValue([]);
-    vi.mocked(markCourseSetupReviewed).mockResolvedValue(true);
+    vi.mocked(setBatchCourseSetupCalibrationSelection).mockResolvedValue(true);
+    vi.mocked(getSourceFilesByIds).mockResolvedValue([
+      { id: batch.workspaces[0].sourceFile?.id } as never,
+    ]);
+  });
+
+  it("copies the batch destination into every new workspace", async () => {
+    const destination = {
+      folderId: 6121,
+      path: [
+        { id: 612, name: "EM 612" },
+        { id: 6121, name: "Module 1" },
+      ],
+    };
+
+    await createCurrentUserBatch(
+      "Planning batch",
+      [batch.workspaces[0].sourceFile?.id ?? ""],
+      destination,
+    );
+
+    expect(createBatchWithWorkspaces).toHaveBeenCalledWith(
+      expect.any(String),
+      "Planning batch",
+      user,
+      [
+        {
+          workspaceId: expect.any(String),
+          sourceFileId: batch.workspaces[0].sourceFile?.id,
+        },
+      ],
+      destination,
+    );
   });
 
   it("persists batch generation through the shared calibration lifecycle", async () => {
@@ -135,11 +175,12 @@ describe("batch course setup calibration", () => {
     );
   });
 
-  it("uses the authenticated user when reviewing an edited batch setup", async () => {
-    await reviewCurrentUserBatchWorkspace(
+  it("saves calibration selection with the authenticated user", async () => {
+    await updateCurrentUserBatchWorkspace(
       batchId,
       workspaceId,
       { ...setup, name: "Updated project planning" },
+      true,
       true,
     );
 
@@ -153,7 +194,12 @@ describe("batch course setup calibration", () => {
       workspaceId,
       user.id,
     );
-    expect(markCourseSetupReviewed).toHaveBeenCalledWith(workspaceId, user);
+    expect(setBatchCourseSetupCalibrationSelection).toHaveBeenCalledWith(
+      batchId,
+      workspaceId,
+      user,
+      true,
+    );
     expect(updateCurrentWorkspaceSourceFiles).toHaveBeenCalledWith(
       workspaceId,
       "kyron_attachment",

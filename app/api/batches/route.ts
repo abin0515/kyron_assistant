@@ -15,6 +15,7 @@ import {
   paginationMeta,
   parsePageRequest,
 } from "@/server/http/pagination";
+import { parseKyronDestination } from "@/server/kyron/destination";
 import type {
   CreateDraftBatchRequest,
   DraftBatchListResponse,
@@ -60,6 +61,7 @@ export async function POST(request: NextRequest) {
       batch: await createCurrentUserBatch(
         parsed.input.name,
         parsed.input.sourceFileIds,
+        parsed.input.kyronDestination ?? { folderId: null, path: [] },
       ),
     } satisfies DraftBatchResponse;
 
@@ -95,6 +97,9 @@ function parseCreateBatchRequest(
   const sourceFileIds = Array.isArray(input.sourceFileIds)
     ? input.sourceFileIds
     : [];
+  const parsedDestination = parseKyronDestination(
+    input.kyronDestination ?? { folderId: null, path: [] },
+  );
 
   if (!name || name.length > 120) {
     errors.name = ["Batch name must be between 1 and 120 characters."];
@@ -110,6 +115,10 @@ function parseCreateBatchRequest(
     ];
   }
 
+  if ("errors" in parsedDestination) {
+    errors.kyronDestination = parsedDestination.errors;
+  }
+
   if (Object.keys(errors).length > 0) {
     return { errors };
   }
@@ -118,6 +127,10 @@ function parseCreateBatchRequest(
     input: {
       name,
       sourceFileIds: [...new Set(sourceFileIds as string[])],
+      kyronDestination:
+        "destination" in parsedDestination
+          ? parsedDestination.destination
+          : undefined,
     },
   };
 }

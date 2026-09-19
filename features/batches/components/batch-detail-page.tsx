@@ -15,13 +15,14 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import {
   generateBatchSetups,
   getBatch,
-  reviewBatchWorkspace,
+  updateBatchWorkspace,
 } from "@/features/batches/api";
 import { BatchDraftList } from "@/features/batches/components/batch-draft-list";
 import { BatchReviewDrawer } from "@/features/batches/components/batch-review-drawer";
 import {
   deleteDraftWorkspace,
   submitDraftWorkspace,
+  updateWorkspaceKyronDestination,
 } from "@/features/drafts/workspaces/api";
 import { matchesWorkspaceFilter } from "@/features/batches/status";
 import type {
@@ -29,12 +30,11 @@ import type {
   BatchFilter,
   BatchRecord,
 } from "@/features/batches/types";
-import type { CourseSetup } from "@/types/api";
+import type { CourseSetup, KyronDestination } from "@/types/api";
 
 const FILTERS: { label: string; value: BatchFilter }[] = [
   { label: "All", value: "all" },
   { label: "Setup generation", value: "pending" },
-  { label: "Needs review", value: "needs_review" },
   { label: "Ready", value: "ready" },
   { label: "In progress", value: "active" },
   { label: "Complete", value: "complete" },
@@ -173,24 +173,26 @@ export function BatchDetailPage({ batchId }: { batchId: string }) {
     }
   }
 
-  async function saveReview(
+  async function saveWorkspaceChanges(
     workspaceId: string,
     setup: CourseSetup,
     attachToKyron: boolean,
+    includeInCalibration: boolean,
   ) {
     setWorking(true);
     setError("");
     try {
       setBatch(
-        await reviewBatchWorkspace(
+        await updateBatchWorkspace(
           batchId,
           workspaceId,
           setup,
           attachToKyron,
+          includeInCalibration,
         ),
       );
       setReviewId(null);
-      setFeedback("Course setup saved and marked ready.");
+      setFeedback("Course setup changes saved.");
     } catch (saveError) {
       setError(errorMessage(saveError, "The course setup could not be saved."));
     } finally {
@@ -217,19 +219,49 @@ export function BatchDetailPage({ batchId }: { batchId: string }) {
     }
   }
 
+  async function saveWorkspaceDestination(
+    workspaceId: string,
+    destination: KyronDestination,
+  ) {
+    const saved = await updateWorkspaceKyronDestination(
+      workspaceId,
+      destination,
+    );
+
+    setBatch((current) =>
+      current
+        ? {
+            ...current,
+            workspaces: current.workspaces.map((workspace) =>
+              workspace.id === workspaceId
+                ? {
+                    ...workspace,
+                    kyronDestination: saved.kyronDestination,
+                    updatedAt: saved.recordUpdatedAt,
+                  }
+                : workspace,
+            ),
+          }
+        : current,
+    );
+  }
+
   async function submitSelected() {
-    const submissionIds = currentBatch.workspaces
-      .filter(
-        (workspace) =>
-          selectedIds.includes(workspace.id) && workspace.status === "ready",
-      )
-      .map((workspace) => workspace.id);
+    const submissionItems = currentBatch.workspaces.filter(
+      (workspace) =>
+        selectedIds.includes(workspace.id) && workspace.status === "ready",
+    );
 
     setShowConfirmation(false);
     setWorking(true);
     setError("");
     const results = await Promise.allSettled(
-      submissionIds.map((id) => submitDraftWorkspace(id)),
+      submissionItems.map((workspace) =>
+        submitDraftWorkspace(
+          workspace.id,
+          workspace.includeInCalibration,
+        ),
+      ),
     );
     await refreshBatch().catch(() => undefined);
     setSelectedIds([]);
@@ -238,8 +270,8 @@ export function BatchDetailPage({ batchId }: { batchId: string }) {
     const failed = results.filter((result) => result.status === "rejected").length;
     setFeedback(
       failed === 0
-        ? `Draft creation started for ${submissionIds.length} workspace${submissionIds.length === 1 ? "" : "s"}.`
-        : `${submissionIds.length - failed} draft requests started; ${failed} need attention.`,
+        ? `Draft creation started for ${submissionItems.length} workspace${submissionItems.length === 1 ? "" : "s"}.`
+        : `${submissionItems.length - failed} draft requests started; ${failed} need attention.`,
     );
   }
 
@@ -347,8 +379,16 @@ export function BatchDetailPage({ batchId }: { batchId: string }) {
           item={reviewItem}
           key={reviewItem.id}
           onClose={() => setReviewId(null)}
-          onSave={(setup, attachToKyron) =>
-            void saveReview(reviewItem.id, setup, attachToKyron)
+          onDestinationChange={(destination) =>
+            saveWorkspaceDestination(reviewItem.id, destination)
+          }
+          onSave={(setup, attachToKyron, includeInCalibration) =>
+            void saveWorkspaceChanges(
+              reviewItem.id,
+              setup,
+              attachToKyron,
+              includeInCalibration,
+            )
           }
         />
       ) : null}
@@ -431,8 +471,8 @@ function ConfirmationDialog({
           Create {count} Kyron draft{count === 1 ? "" : "s"}?
         </h2>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-          Only reviewed and selected workspaces will be submitted. Each request
-          runs independently if another one fails.
+          Only selected ready workspaces will be submitted. Each request runs
+          independently if another one fails.
         </p>
         <div className="mt-5 flex justify-end gap-2">
           <Button onClick={onCancel} type="button" variant="outline">

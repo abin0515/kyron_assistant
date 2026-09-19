@@ -16,6 +16,22 @@ export async function createKyronFile(
   return getKyronClient().createFile(input);
 }
 
+export async function listKyronAssetFolders(
+  query: Parameters<
+    ReturnType<typeof createKyronClient>["listAssetFolders"]
+  >[0] = {},
+) {
+  return getKyronClient().listAssetFolders(query);
+}
+
+export async function createKyronAssetFolder(
+  input: Parameters<
+    ReturnType<typeof createKyronClient>["createAssetFolder"]
+  >[0],
+) {
+  return getKyronClient().createAssetFolder(input);
+}
+
 function getKyronClient() {
   const environment = getServerEnv();
 

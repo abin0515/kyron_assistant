@@ -18,6 +18,7 @@ type CalibrationRow = {
   generated_at: string | Date;
   prompt_version: string;
   model: string;
+  review_required: boolean;
   review_status: CourseSetupReviewStatus;
   review_result: CourseSetupReviewResult | null;
   reviewed_setup: unknown | null;
@@ -28,6 +29,11 @@ type CalibrationRow = {
   submitted_setup: unknown | null;
   submitted_at: string | Date | null;
   kyron_draft_id: string | number | null;
+  include_in_calibration: boolean;
+  calibration_selected_by_id: string | null;
+  calibration_selected_by_name: string | null;
+  calibration_selected_by_email: string | null;
+  calibration_selected_at: string | Date | null;
 };
 
 export async function getCourseSetupCalibration(
@@ -191,6 +197,7 @@ export async function completeCourseSetupGeneration(
         model = ${result.model},
         generation_token = NULL,
         generation_started_at = NULL,
+        review_required = FALSE,
         review_status = 'needs_review',
         review_result = NULL,
         reviewed_setup = NULL,
@@ -201,6 +208,11 @@ export async function completeCourseSetupGeneration(
         submitted_setup = NULL,
         submitted_at = NULL,
         kyron_draft_id = NULL,
+        include_in_calibration = FALSE,
+        calibration_selected_by_id = NULL,
+        calibration_selected_by_name = NULL,
+        calibration_selected_by_email = NULL,
+        calibration_selected_at = NULL,
         record_updated_at = NOW()
       FROM updated_workspace
       WHERE calibration.workspace_id = updated_workspace.id
@@ -241,9 +253,10 @@ export async function claimBatchCourseSetupGeneration(
       INSERT INTO course_setup_calibrations (
         workspace_id,
         generation_token,
-        generation_started_at
+        generation_started_at,
+        review_required
       )
-      SELECT id, ${generationToken}, NOW()
+      SELECT id, ${generationToken}, NOW(), FALSE
       FROM candidate
       WHERE kyron_draft_id IS NULL
         AND status IN ('editing', 'error')
@@ -262,6 +275,7 @@ export async function claimBatchCourseSetupGeneration(
       SET
         generation_token = EXCLUDED.generation_token,
         generation_started_at = EXCLUDED.generation_started_at,
+        review_required = FALSE,
         record_updated_at = NOW()
       WHERE course_setup_calibrations.generation_token IS NULL
         OR course_setup_calibrations.generation_started_at < NOW() - INTERVAL '10 minutes'
@@ -324,8 +338,8 @@ export async function completeBatchCourseSetupGeneration(
         duration_seconds = ${result.setup.duration},
         status = 'editing',
         status_message = '',
-        setup_status = 'needs_review',
-        setup_status_message = 'AI suggestion generated. Human review is required.',
+        setup_status = 'reviewed',
+        setup_status_message = 'AI suggestion generated and ready to submit.',
         record_updated_at = NOW()
       FROM active_cycle
       WHERE workspace.id = active_cycle.workspace_id
@@ -340,6 +354,7 @@ export async function completeBatchCourseSetupGeneration(
         model = ${result.model},
         generation_token = NULL,
         generation_started_at = NULL,
+        review_required = FALSE,
         review_status = 'needs_review',
         review_result = NULL,
         reviewed_setup = NULL,
@@ -350,6 +365,11 @@ export async function completeBatchCourseSetupGeneration(
         submitted_setup = NULL,
         submitted_at = NULL,
         kyron_draft_id = NULL,
+        include_in_calibration = FALSE,
+        calibration_selected_by_id = NULL,
+        calibration_selected_by_name = NULL,
+        calibration_selected_by_email = NULL,
+        calibration_selected_at = NULL,
         record_updated_at = NOW()
       FROM updated_workspace
       WHERE calibration.workspace_id = updated_workspace.id
@@ -442,7 +462,8 @@ export async function ensureBatchCourseSetupCalibration(
       generated_at,
       prompt_version,
       model,
-      review_status
+      review_status,
+      review_required
     )
     SELECT
       workspace.id,
@@ -457,7 +478,8 @@ export async function ensureBatchCourseSetupCalibration(
       workspace.record_updated_at,
       'legacy-batch-pre-calibration',
       'unknown',
-      'needs_review'
+      'needs_review',
+      FALSE
     FROM draft_workspaces AS workspace
     WHERE workspace.id = ${workspaceId}
       AND workspace.batch_id = ${batchId}
@@ -467,6 +489,54 @@ export async function ensureBatchCourseSetupCalibration(
       AND workspace.setup_status IN ('needs_review', 'reviewed')
     ON CONFLICT (workspace_id) DO NOTHING
   `;
+}
+
+export async function setBatchCourseSetupCalibrationSelection(
+  batchId: string,
+  workspaceId: string,
+  user: CurrentUser,
+  includeInCalibration: boolean,
+): Promise<boolean> {
+  const sql = getDatabase();
+  const rows = (await sql`
+    WITH selected_calibration AS (
+      UPDATE course_setup_calibrations AS calibration
+      SET
+        review_required = FALSE,
+        include_in_calibration = ${includeInCalibration},
+        calibration_selected_by_id = CASE
+          WHEN ${includeInCalibration} THEN ${user.id}
+          ELSE NULL
+        END,
+        calibration_selected_by_name = CASE
+          WHEN ${includeInCalibration} THEN ${user.name}
+          ELSE NULL
+        END,
+        calibration_selected_by_email = CASE
+          WHEN ${includeInCalibration} THEN ${user.email}
+          ELSE NULL
+        END,
+        calibration_selected_at = CASE
+          WHEN ${includeInCalibration} THEN NOW()
+          ELSE NULL
+        END,
+        record_updated_at = NOW()
+      FROM draft_workspaces AS workspace
+      WHERE calibration.workspace_id = workspace.id
+        AND calibration.workspace_id = ${workspaceId}
+        AND workspace.batch_id = ${batchId}
+        AND workspace.created_by_id = ${user.id}
+        AND workspace.kyron_draft_id IS NULL
+        AND workspace.status IN ('editing', 'error')
+        AND workspace.setup_status = 'reviewed'
+        AND calibration.generated_setup IS NOT NULL
+        AND calibration.generation_token IS NULL
+      RETURNING calibration.workspace_id
+    )
+    SELECT workspace_id FROM selected_calibration
+  `) as Array<{ workspace_id: string }>;
+
+  return Boolean(rows[0]);
 }
 
 export async function markCourseSetupReviewed(
@@ -545,6 +615,7 @@ export async function completeWorkspaceSubmissionWithCalibration(
   kyronDraftId: number,
   statusMessage: string,
   submittedSetup: CourseSetup,
+  includeInCalibration: boolean,
 ): Promise<boolean> {
   const sql = getDatabase();
   const setup = JSON.stringify(submittedSetup);
@@ -569,6 +640,24 @@ export async function completeWorkspaceSubmissionWithCalibration(
         submitted_setup = ${setup}::JSONB,
         submitted_at = NOW(),
         kyron_draft_id = ${kyronDraftId},
+        review_required = FALSE,
+        include_in_calibration = ${includeInCalibration},
+        calibration_selected_by_id = CASE
+          WHEN ${includeInCalibration} THEN workspace.created_by_id
+          ELSE NULL
+        END,
+        calibration_selected_by_name = CASE
+          WHEN ${includeInCalibration} THEN workspace.created_by_name
+          ELSE NULL
+        END,
+        calibration_selected_by_email = CASE
+          WHEN ${includeInCalibration} THEN workspace.created_by_email
+          ELSE NULL
+        END,
+        calibration_selected_at = CASE
+          WHEN ${includeInCalibration} THEN NOW()
+          ELSE NULL
+        END,
         record_updated_at = NOW()
       FROM draft_workspaces AS workspace
       WHERE calibration.workspace_id = workspace.id
@@ -593,12 +682,23 @@ function toCalibration(row: CalibrationRow): CourseSetupCalibration {
           email: row.reviewed_by_email,
         }
       : null;
+  const calibrationSelectedBy =
+    row.calibration_selected_by_id &&
+    row.calibration_selected_by_name &&
+    row.calibration_selected_by_email
+      ? {
+          id: row.calibration_selected_by_id,
+          name: row.calibration_selected_by_name,
+          email: row.calibration_selected_by_email,
+        }
+      : null;
 
   return {
     generatedSetup: readCourseSetup(row.generated_setup),
     generatedAt: toIsoString(row.generated_at),
     promptVersion: row.prompt_version,
     model: row.model,
+    reviewRequired: row.review_required,
     reviewStatus: row.review_status,
     reviewResult: row.review_result,
     reviewedSetup: row.reviewed_setup
@@ -612,6 +712,11 @@ function toCalibration(row: CalibrationRow): CourseSetupCalibration {
     submittedAt: toNullableIsoString(row.submitted_at),
     kyronDraftId:
       row.kyron_draft_id === null ? null : Number(row.kyron_draft_id),
+    includeInCalibration: row.include_in_calibration,
+    calibrationSelectedBy,
+    calibrationSelectedAt: toNullableIsoString(
+      row.calibration_selected_at,
+    ),
   };
 }
 

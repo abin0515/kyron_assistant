@@ -1,11 +1,15 @@
 import type { ApiErrorCode } from "@/types/api";
 
 import {
+  parseAssetFolder,
+  parseAssetFolderList,
   parseFileUpload,
   parseLessonCollection,
   parseOrganization,
+  type KyronCreateAssetFolderRequest,
   type KyronCreateFileRequest,
   type KyronCreateLessonCollectionRequest,
+  type KyronListAssetFoldersQuery,
 } from "./contracts";
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
@@ -14,6 +18,7 @@ type KyronClientErrorCode = Extract<
   ApiErrorCode,
   | "KYRON_UNAUTHORIZED"
   | "KYRON_NOT_FOUND"
+  | "KYRON_CONFLICT"
   | "KYRON_RATE_LIMITED"
   | "KYRON_UNAVAILABLE"
   | "KYRON_INVALID_RESPONSE"
@@ -74,6 +79,15 @@ function errorForStatus(status: number): KyronClientError {
     return new KyronClientError({
       code: "KYRON_NOT_FOUND",
       message: "The requested Kyron resource was not found.",
+      retryable: false,
+      upstreamStatus: status,
+    });
+  }
+
+  if (status === 409 || status === 422) {
+    return new KyronClientError({
+      code: "KYRON_CONFLICT",
+      message: "Kyron could not apply the request because it conflicts with the current resource state.",
       retryable: false,
       upstreamStatus: status,
     });
@@ -198,6 +212,36 @@ export function createKyronClient({
       );
 
       return response;
+    },
+
+    async listAssetFolders(query: KyronListAssetFoldersQuery = {}) {
+      const searchParams = new URLSearchParams();
+
+      if (query.parent_id !== undefined) {
+        searchParams.set("parent_id", String(query.parent_id));
+      }
+
+      if (query.page !== undefined) {
+        searchParams.set("page", String(query.page));
+      }
+
+      if (query.per_page !== undefined) {
+        searchParams.set("per_page", String(query.per_page));
+      }
+
+      const queryString = searchParams.toString();
+
+      return request(
+        `/asset_folders${queryString ? `?${queryString}` : ""}`,
+        parseAssetFolderList,
+      );
+    },
+
+    async createAssetFolder(input: KyronCreateAssetFolderRequest) {
+      return request("/asset_folders", parseAssetFolder, {
+        method: "POST",
+        body: input,
+      });
     },
 
     async createLessonCollection(

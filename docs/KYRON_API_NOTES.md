@@ -15,24 +15,27 @@ schemas: `docs/reference/openapi.yaml`.
 - `POST /lesson_collections`: create an asynchronous asset
 - `GET /lesson_collections/{id}`: read generation status and URLs
 - `POST /files`: request a signed file-upload target
+- `GET /asset_folders`: list direct child folders
+- `POST /asset_folders`: create a top-level folder or subfolder
 
 The public API also documents list, publish, and delete operations. Publishing
 and Kyron asset deletion are outside the V1 application.
 
 ## Folder support — document reviewed September 14, 2026
 
-The updated public API documents folder management and optional folder placement
-at course creation. These capabilities are not yet implemented in the launcher.
-The new folder endpoints and creation field have not yet been tested against
-the live API.
+The launcher implements folder listing, nested browsing, folder creation, and
+optional folder placement during course creation. It stores the selected folder
+ID and a display-path snapshot on each workspace. A Batch can provide a default
+destination, and an individual Batch workspace can override it before
+submission.
 
-| Endpoint | Documented behavior |
-| --- | --- |
-| `GET /asset_folders` | List direct child folders, with optional `parent_id`, `page`, and `per_page`. Omitting `parent_id` lists top-level folders. |
-| `POST /asset_folders` | Create a folder with a required `name` and optional `parent_id`. The default parent is the organization's root folder. |
-| `GET /asset_folders/{id}` | Return the folder itself, its direct child folders, and its direct lesson collections. |
-| `PATCH /asset_folders/{id}` | Rename a folder using `name` or move the folder using `parent_id`. |
-| `DELETE /asset_folders/{id}` | Delete an empty folder. The organization's library folder cannot be deleted. |
+| Endpoint | Documented behavior | Launcher status |
+| --- | --- | --- |
+| `GET /asset_folders` | List direct child folders, with optional `parent_id`, `page`, and `per_page`. Omitting `parent_id` lists top-level folders. | Implemented |
+| `POST /asset_folders` | Create a folder with a required `name` and optional `parent_id`. The default parent is the organization's root folder. | Implemented |
+| `GET /asset_folders/{id}` | Return the folder itself, its direct child folders, and its direct lesson collections. | Not used; the picker lists children through `GET /asset_folders` |
+| `PATCH /asset_folders/{id}` | Rename a folder using `name` or move the folder using `parent_id`. | Deferred |
+| `DELETE /asset_folders/{id}` | Delete an empty folder. The organization's library folder cannot be deleted. | Deferred |
 
 `AssetFolder` contains `id`, `name`, `parent_id`, `created_at`, and `updated_at`.
 The organization's root folder has a null `parent_id`. Folder names must be
@@ -58,8 +61,8 @@ does not include `asset_folder_id`, so it does not confirm placement directly.
 
 Kyron folders organize generated assets in Kyron Studio. They do not add folder
 storage to the launcher's Source Library or change its Blob upload workflow.
-See [Next milestones](IMPLEMENTATION_PLAN.md#next-milestones) for the proposed
-integration steps.
+The launcher does not provide a separate Kyron Library management page; folder
+selection and creation stay inside the draft workflows.
 
 ### Publishing response update
 

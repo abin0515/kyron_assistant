@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import {
+  DraftWorkspaceDestinationError,
   DraftWorkspaceSubmissionError,
   submitCurrentUserDraftWorkspace,
 } from "@/server/drafts/workspaces/service";
@@ -16,6 +17,7 @@ import {
 } from "@/server/http/api-response";
 import { KyronClientError } from "@/server/kyron/client";
 import { KyronAttachmentTransferError } from "@/server/drafts/workspace-source-files/kyron-attachment";
+import type { SubmitDraftWorkspaceRequest } from "@/types/api";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,8 +43,17 @@ export async function POST(
     return requestErrorResponse("Draft workspace ID is invalid.");
   }
 
+  const parsedRequest = await readSubmitRequest(request);
+
+  if (!parsedRequest.data) {
+    return validationErrorResponse(parsedRequest.errors ?? {});
+  }
+
   try {
-    const workspace = await submitCurrentUserDraftWorkspace(id);
+    const workspace = await submitCurrentUserDraftWorkspace(
+      id,
+      parsedRequest.data.includeInCalibration,
+    );
 
     if (!workspace) {
       return notFoundErrorResponse("Draft workspace was not found.");
@@ -56,7 +67,50 @@ export async function POST(
   }
 }
 
+async function readSubmitRequest(request: NextRequest): Promise<{
+  data?: SubmitDraftWorkspaceRequest;
+  errors?: Record<string, string[]>;
+}> {
+  if (!request.headers.get("content-type")?.startsWith("application/json")) {
+    return {
+      errors: { request: ["Content-Type must be application/json."] },
+    };
+  }
+
+  let value: unknown;
+
+  try {
+    value = await request.json();
+  } catch {
+    return { errors: { request: ["Request body must be valid JSON."] } };
+  }
+
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { errors: { request: ["Request body must be an object."] } };
+  }
+
+  const includeInCalibration = (
+    value as Record<string, unknown>
+  ).includeInCalibration;
+
+  if (typeof includeInCalibration !== "boolean") {
+    return {
+      errors: {
+        includeInCalibration: [
+          "includeInCalibration must be a boolean.",
+        ],
+      },
+    };
+  }
+
+  return { data: { includeInCalibration } };
+}
+
 function submissionErrorResponse(error: unknown) {
+  if (error instanceof DraftWorkspaceDestinationError) {
+    return conflictErrorResponse(error.message, false);
+  }
+
   if (error instanceof DraftWorkspaceSubmissionError) {
     if (error.code === "INVALID_WORKSPACE") {
       return validationErrorResponse(error.fieldErrors ?? {});

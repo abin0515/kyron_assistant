@@ -1,6 +1,9 @@
-import type { Draft } from "@/types/api";
+import type { Draft, KyronAssetFolderItem } from "@/types/api";
 
-import type { KyronLessonCollection } from "./contracts";
+import type {
+  KyronAssetFolder,
+  KyronLessonCollection,
+} from "./contracts";
 
 export function toDraft(collection: KyronLessonCollection): Draft {
   return {
@@ -12,5 +15,17 @@ export function toDraft(collection: KyronLessonCollection): Draft {
     editorUrl: collection.editor_url,
     createdAt: collection.created_at,
     updatedAt: collection.updated_at,
+  };
+}
+
+export function toKyronAssetFolderItem(
+  folder: KyronAssetFolder,
+): KyronAssetFolderItem {
+  return {
+    id: folder.id,
+    name: folder.name,
+    parentId: folder.parent_id,
+    createdAt: folder.created_at,
+    updatedAt: folder.updated_at,
   };
 }

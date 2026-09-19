@@ -40,14 +40,16 @@ metadata. Uploaded file bytes belong in private object storage, not PostgreSQL.
 - OpenAI returns a structured suggestion for all course fields. A successful
   response updates the editable workspace and latest calibration baseline
   together.
-- `POST /api/draft-workspaces/[id]/course-setup-review` snapshots the current
-  saved fields with the authenticated reviewer identity.
-- Editing after approval invalidates the review. AI-generated workspaces must
-  have a current review before submission; manual workspaces are unchanged.
+- Individual and Batch workspaces can submit an AI-generated setup without a
+  separate review gate.
+- An optional calibration checkbox travels with submission. A successful Kyron
+  submission stores the exact submitted setup and authenticated selection
+  metadata beside the unchanged AI baseline.
 
 ### 3. Kyron submission
 
-- `POST /api/draft-workspaces/[id]/submit` validates the saved workspace.
+- `POST /api/draft-workspaces/[id]/submit` validates the saved workspace and
+  accepts the optional calibration selection.
 - An optional linked PDF/PPTX reuses the checksum saved when it entered the
   Source Library, streams to Kyron's signed target, and is referenced by
   `signed_id`. Older records calculate and cache the checksum on first use.
@@ -91,6 +93,20 @@ metadata. Uploaded file bytes belong in private object storage, not PostgreSQL.
 - Guarded deletion rejects active links. Historical links are removed with the
   file record before its Blob object is deleted.
 
+### 7. Kyron folder destination
+
+- `GET /api/kyron-folders` proxies paginated direct-child folder reads without
+  exposing the Kyron API key.
+- `POST /api/kyron-folders` creates a folder in the selected parent and maps
+  Kyron validation, conflict, and not-found responses to application errors.
+- The destination picker supports nested browsing, breadcrumbs, pagination,
+  top-level selection, and creating a folder or subfolder.
+- Neon stores the selected folder ID and display-path snapshot on each
+  workspace. Batch creation copies its default destination to every workspace,
+  which can later override it independently.
+- Draft submission sends optional `asset_folder_id`. A missing destination
+  returns the workspace to a recoverable error state.
+
 ## Data model
 
 ### `draft_workspaces`
@@ -107,10 +123,11 @@ The workspace references its Kyron record after successful submission.
 
 ### `course_setup_calibrations`
 
-Stores one active review cycle per AI-generated workspace, including Batch
-workspaces: the latest successful AI baseline, prompt/model metadata,
-human-reviewed setup and reviewer, and the exact setup accepted by Kyron. It
-intentionally does not store full generation history.
+Stores one active calibration record per AI-generated workspace, including
+Batch workspaces: the latest successful AI baseline, prompt/model metadata,
+optional calibration selection, and the exact setup accepted by Kyron. Legacy
+human-review fields remain for compatibility. It intentionally does not store
+full generation history.
 
 ## Error model
 
@@ -177,8 +194,9 @@ Kyron public upload workflow accepts only PDF and PPTX.
 - Setup generation is limited to 20 workspaces per batch and runs with two
   concurrent workers. Workspace claims prevent duplicate generation and can be
   reclaimed after 10 minutes if a request stops unexpectedly.
-- Each workspace stores its own setup state, message, generated fields, review
-  state, attachment choice, Kyron submission, and synchronization result.
+- Each workspace stores its own setup state, message, generated fields,
+  calibration choice, attachment choice, destination, Kyron submission, and
+  synchronization result.
 - This MVP starts generation from a Batch detail request; a durable queue or
   workflow runner is deferred until usage requires generation to continue
   independently of a web request.
@@ -188,13 +206,8 @@ Kyron public upload workflow accepts only PDF and PPTX.
 1. Enable Microsoft sign-in in Clerk and verify owner-scoped data isolation.
 2. Add durable background jobs before increasing the batch limit or expected
    processing time.
-3. Verify the newly documented folder GET endpoints, including nested folders
-   and the shared pagination of folders and courses. Then add a destination
-   folder selector for individual workspaces and a shared destination for a
-   batch. Persist the selection and send optional `asset_folder_id` during
-   course creation. Folder creation can follow; folder mutation controls are
-   not part of the first selector implementation. See the
-   [folder API notes](KYRON_API_NOTES.md#folder-support--document-reviewed-september-14-2026).
+3. Live-test Batch default destinations, per-workspace overrides, and nested
+   folder creation. Rename, move, and delete controls remain deferred.
 4. Add generated-content reads and editing when supported public APIs become
    available. The current update does not provide these operations or a way
    to move existing lesson collections between folders.

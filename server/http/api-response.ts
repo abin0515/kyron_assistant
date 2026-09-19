@@ -18,6 +18,8 @@ function statusForKyronError(code: ApiErrorCode): number {
   switch (code) {
     case "KYRON_NOT_FOUND":
       return 404;
+    case "KYRON_CONFLICT":
+      return 409;
     case "KYRON_RATE_LIMITED":
     case "KYRON_UNAVAILABLE":
     case "REQUEST_TIMEOUT":

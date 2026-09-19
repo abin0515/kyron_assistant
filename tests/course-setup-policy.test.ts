@@ -86,6 +86,19 @@ describe("course setup calibration policy", () => {
     ).toBe(false);
   });
 
+  it("does not require review when the workflow keeps calibration optional", () => {
+    expect(
+      requiresCourseSetupReview(
+        {
+          reviewRequired: false,
+          reviewStatus: "needs_review",
+          reviewedSetup: null,
+        },
+        generatedSetup,
+      ),
+    ).toBe(false);
+  });
+
   it("requires review again when the saved approval is stale", () => {
     expect(
       requiresCourseSetupReview(

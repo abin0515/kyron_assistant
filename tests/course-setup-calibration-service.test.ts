@@ -57,6 +57,7 @@ const workspace: DraftWorkspace = {
   sourceText: "Create a planning course.",
   kyronDraftId: null,
   submittedAt: null,
+  kyronDestination: { folderId: null, path: [] },
   courseSetupCalibration: null,
   createdBy: user,
   recordCreatedAt: "2026-09-14T12:00:00.000Z",
@@ -100,6 +101,7 @@ describe("single-workspace course setup calibration service", () => {
       generatedAt: "2026-09-14T12:00:00.000Z",
       promptVersion: "course-setup-v1",
       model: "gpt-test",
+      reviewRequired: true,
       reviewStatus: "needs_review",
       reviewResult: null,
       reviewedSetup: null,
@@ -108,6 +110,9 @@ describe("single-workspace course setup calibration service", () => {
       submittedSetup: null,
       submittedAt: null,
       kyronDraftId: null,
+      includeInCalibration: false,
+      calibrationSelectedBy: null,
+      calibrationSelectedAt: null,
     });
 
     const result = await generateCurrentUserWorkspaceCourseSetup({

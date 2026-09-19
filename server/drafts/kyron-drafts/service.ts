@@ -132,6 +132,9 @@ async function requestDraftCreation(
     audience: input.audience,
     duration: input.duration,
     lesson_type: input.assetType,
+    ...(input.assetFolderId
+      ? { asset_folder_id: input.assetFolderId }
+      : {}),
     ...(input.alignmentContentSignedId
       ? {
           alignment_content_signed_id:

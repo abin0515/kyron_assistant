@@ -436,7 +436,6 @@ function WorkspaceState({ status }: { status: BatchDraftStatus }) {
     complete: "Complete",
     generating: "Generating",
     kyron_error: "Draft error",
-    needs_review: "Needs review",
     ready: "Ready",
     setup_error: "Setup error",
     setup_generating: "Generating setup",

@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   BatchValidationError,
   BatchWorkspaceNotFoundError,
-  reviewCurrentUserBatchWorkspace,
+  updateCurrentUserBatchWorkspace,
 } from "@/server/batches/service";
 import {
   internalErrorResponse,
@@ -18,7 +18,7 @@ import {
   DURATIONS,
   type CourseSetup,
   type DraftBatchResponse,
-  type ReviewBatchWorkspaceRequest,
+  type UpdateBatchWorkspaceRequest,
 } from "@/types/api";
 
 export const runtime = "nodejs";
@@ -49,18 +49,19 @@ export async function PATCH(
     return requestErrorResponse("Request body must be valid JSON.");
   }
 
-  const parsed = parseReviewRequest(body);
+  const parsed = parseUpdateRequest(body);
 
   if ("errors" in parsed) {
     return validationErrorResponse(parsed.errors);
   }
 
   try {
-    const batch = await reviewCurrentUserBatchWorkspace(
+    const batch = await updateCurrentUserBatchWorkspace(
       id,
       workspaceId,
       parsed.input,
       parsed.attachToKyron,
+      parsed.includeInCalibration,
     );
 
     if (!batch) {
@@ -80,17 +81,21 @@ export async function PATCH(
     }
 
     return internalErrorResponse(error, {
-      context: "Batch workspace review failed",
+      context: "Batch workspace update failed",
       fallbackMessage: "The batch workspace could not be saved.",
       retryable: true,
     });
   }
 }
 
-function parseReviewRequest(
+function parseUpdateRequest(
   value: unknown,
 ):
-  | { input: CourseSetup; attachToKyron: boolean }
+  | {
+      input: CourseSetup;
+      attachToKyron: boolean;
+      includeInCalibration: boolean;
+    }
   | { errors: Record<string, string[]> } {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return { errors: { request: ["Request body must be an object."] } };
@@ -127,12 +132,17 @@ function parseReviewRequest(
   if (typeof input.attachToKyron !== "boolean") {
     errors.attachToKyron = ["attachToKyron must be a boolean."];
   }
+  if (typeof input.includeInCalibration !== "boolean") {
+    errors.includeInCalibration = [
+      "includeInCalibration must be a boolean.",
+    ];
+  }
 
   if (Object.keys(errors).length > 0) {
     return { errors };
   }
 
-  const request = input as unknown as ReviewBatchWorkspaceRequest;
+  const request = input as unknown as UpdateBatchWorkspaceRequest;
   return {
     input: {
       name,
@@ -143,6 +153,7 @@ function parseReviewRequest(
       duration: request.duration,
     },
     attachToKyron: request.attachToKyron,
+    includeInCalibration: request.includeInCalibration,
   };
 }
 

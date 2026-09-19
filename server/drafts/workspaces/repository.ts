@@ -16,6 +16,7 @@ import type {
   DraftWorkspaceStatus,
   DraftWorkspaceSummary,
   Duration,
+  KyronDestination,
   UpdateDraftWorkspaceRequest,
 } from "@/types/api";
 
@@ -31,6 +32,8 @@ type DraftWorkspaceRow = {
   asset_type: AssetType;
   duration_seconds: Duration;
   kyron_draft_id: string | number | null;
+  kyron_asset_folder_id: string | number | null;
+  kyron_asset_folder_path: unknown;
   submitted_at: string | Date | null;
   created_by_id: string;
   created_by_name: string;
@@ -45,6 +48,8 @@ type DraftWorkspaceSummaryRow = Omit<
   | "description"
   | "learning_objective"
   | "audience"
+  | "kyron_asset_folder_id"
+  | "kyron_asset_folder_path"
   | "created_by_id"
   | "created_by_name"
   | "created_by_email"
@@ -147,6 +152,7 @@ export async function updateDraftWorkspace(
           AND workspace.created_by_id = ${userId}
           AND workspace.kyron_draft_id IS NULL
           AND workspace.status IN ('editing', 'error')
+          AND calibration.review_required = TRUE
           AND calibration.review_status = 'reviewed'
           AND calibration.reviewed_setup IS DISTINCT FROM JSONB_BUILD_OBJECT(
             'name', BTRIM(workspace.name),
@@ -178,6 +184,28 @@ export async function updateDraftWorkspace(
   const row = updatedRows[0];
 
   return row ? toDraftWorkspace(row) : null;
+}
+
+export async function updateDraftWorkspaceKyronDestination(
+  id: string,
+  userId: string,
+  destination: KyronDestination,
+): Promise<DraftWorkspace | null> {
+  const sql = getDatabase();
+  const rows = (await sql`
+    UPDATE draft_workspaces
+    SET
+      kyron_asset_folder_id = ${destination.folderId},
+      kyron_asset_folder_path = ${JSON.stringify(destination.path)}::JSONB,
+      record_updated_at = NOW()
+    WHERE id = ${id}
+      AND created_by_id = ${userId}
+      AND kyron_draft_id IS NULL
+      AND status IN ('editing', 'error')
+    RETURNING *
+  `) as DraftWorkspaceRow[];
+
+  return rows[0] ? toDraftWorkspace(rows[0]) : null;
 }
 
 export async function deleteDraftWorkspace(
@@ -290,28 +318,6 @@ export async function startDraftWorkspaceSubmission(
         WHERE calibration.workspace_id = draft_workspaces.id
           AND calibration.generation_token IS NOT NULL
       )
-      AND (
-        NOT EXISTS (
-          SELECT 1
-          FROM course_setup_calibrations AS calibration
-          WHERE calibration.workspace_id = draft_workspaces.id
-            AND calibration.generated_setup IS NOT NULL
-        )
-        OR EXISTS (
-          SELECT 1
-          FROM course_setup_calibrations AS calibration
-          WHERE calibration.workspace_id = draft_workspaces.id
-            AND calibration.review_status = 'reviewed'
-            AND calibration.reviewed_setup = JSONB_BUILD_OBJECT(
-              'name', BTRIM(draft_workspaces.name),
-              'description', BTRIM(draft_workspaces.description),
-              'learningObjective', BTRIM(draft_workspaces.learning_objective),
-              'audience', BTRIM(draft_workspaces.audience),
-              'assetType', draft_workspaces.asset_type,
-              'duration', draft_workspaces.duration_seconds
-            )
-        )
-      )
     RETURNING *
   `) as DraftWorkspaceRow[];
 
@@ -376,6 +382,10 @@ function toDraftWorkspace(row: DraftWorkspaceRow): DraftWorkspace {
     assetType: row.asset_type,
     duration: Number(row.duration_seconds) as Duration,
     kyronDraftId: toNullableNumber(row.kyron_draft_id),
+    kyronDestination: {
+      folderId: toNullableNumber(row.kyron_asset_folder_id),
+      path: toKyronFolderPath(row.kyron_asset_folder_path),
+    },
     submittedAt: toNullableIsoString(row.submitted_at),
     courseSetupCalibration: null,
     createdBy: {
@@ -419,4 +429,28 @@ function toNullableNumber(
   value: string | number | null,
 ): number | null {
   return value === null ? null : Number(value);
+}
+
+function toKyronFolderPath(value: unknown): KyronDestination["path"] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((item) => {
+    if (
+      !item ||
+      typeof item !== "object" ||
+      !("id" in item) ||
+      !("name" in item) ||
+      typeof item.id !== "number" ||
+      !Number.isSafeInteger(item.id) ||
+      item.id <= 0 ||
+      typeof item.name !== "string" ||
+      !item.name
+    ) {
+      return [];
+    }
+
+    return [{ id: item.id, name: item.name }];
+  });
 }

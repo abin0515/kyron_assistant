@@ -10,7 +10,6 @@ export type BatchFilter =
   | "all"
   | "pending"
   | "ready"
-  | "needs_review"
   | "active"
   | "complete"
   | "error";

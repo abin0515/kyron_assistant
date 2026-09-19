@@ -6,7 +6,7 @@ import type {
   DraftBatchListResponse,
   DraftBatchResponse,
   GenerateDraftBatchRequest,
-  ReviewBatchWorkspaceRequest,
+  UpdateBatchWorkspaceRequest,
 } from "@/types/api";
 
 export async function listBatches(
@@ -51,17 +51,19 @@ export async function generateBatchSetups(
   return (await parseJsonResponse<DraftBatchResponse>(response)).batch;
 }
 
-export async function reviewBatchWorkspace(
+export async function updateBatchWorkspace(
   batchId: string,
   workspaceId: string,
   setup: CourseSetup,
   attachToKyron: boolean,
+  includeInCalibration: boolean,
   signal?: AbortSignal,
 ): Promise<DraftBatch> {
   const body = {
     ...setup,
     attachToKyron,
-  } satisfies ReviewBatchWorkspaceRequest;
+    includeInCalibration,
+  } satisfies UpdateBatchWorkspaceRequest;
   const response = await fetch(
     `/api/batches/${batchId}/workspaces/${workspaceId}`,
     jsonRequest("PATCH", body, signal),

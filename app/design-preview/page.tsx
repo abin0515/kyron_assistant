@@ -33,6 +33,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { WorkspaceSourceSelectorConcept } from "@/features/drafts/workspaces/components/workspace-source-selector-concept";
 import { WorkspaceDraftAttachmentConcept } from "@/features/drafts/workspaces/components/workspace-draft-attachment-concept";
+import { KyronFolderPickerConcept } from "@/features/drafts/workspaces/components/kyron-folder-picker-concept";
 import { SourceLibraryConcept } from "@/features/source-library/components/source-library-concept";
 
 /**
@@ -496,6 +497,10 @@ function NewDraftView({ workspace }: { workspace: WorkspacePreview }) {
               </PreviewField>
 
               <WorkspaceDraftAttachmentConcept
+                disabled={workspace.status !== "editing"}
+              />
+
+              <KyronFolderPickerConcept
                 disabled={workspace.status !== "editing"}
               />
             </CardContent>

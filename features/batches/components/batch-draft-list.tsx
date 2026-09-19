@@ -259,7 +259,7 @@ function ItemActions({
   onRemove,
   onRetry,
 }: Pick<BatchItemProps, "item" | "onEdit" | "onRemove" | "onRetry">) {
-  const canEdit = item.status === "ready" || item.status === "needs_review";
+  const canEdit = item.status === "ready";
   const canRetry = item.status === "setup_error";
   const canViewDetails = [
     "submitting",
@@ -270,7 +270,6 @@ function ItemActions({
   const canRemove = [
     "setup_pending",
     "setup_error",
-    "needs_review",
     "ready",
   ].includes(item.status);
 
@@ -359,12 +358,6 @@ const STATUS_CONFIG = {
     className: "border-[#9BC7B0] bg-[#F0FAF4] text-[#23653F]",
     icon: CircleCheck,
     label: "Ready",
-    spin: false,
-  },
-  needs_review: {
-    className: "border-[#DABF7A] bg-[#FFF9E9] text-[#74591D]",
-    icon: TriangleAlert,
-    label: "Needs review",
     spin: false,
   },
   submitting: {
