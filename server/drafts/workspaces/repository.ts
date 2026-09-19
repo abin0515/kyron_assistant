@@ -130,31 +130,48 @@ export async function updateDraftWorkspace(
       RETURNING *
     `,
     transaction`
-      UPDATE course_setup_calibrations AS calibration
-      SET
-        review_status = 'needs_review',
-        review_result = NULL,
-        reviewed_setup = NULL,
-        reviewed_by_id = NULL,
-        reviewed_by_name = NULL,
-        reviewed_by_email = NULL,
-        reviewed_at = NULL,
-        record_updated_at = NOW()
-      FROM draft_workspaces AS workspace
-      WHERE calibration.workspace_id = workspace.id
-        AND calibration.workspace_id = ${id}
-        AND workspace.created_by_id = ${userId}
-        AND workspace.kyron_draft_id IS NULL
-        AND workspace.status IN ('editing', 'error')
-        AND calibration.review_status = 'reviewed'
-        AND calibration.reviewed_setup IS DISTINCT FROM JSONB_BUILD_OBJECT(
-          'name', BTRIM(workspace.name),
-          'description', BTRIM(workspace.description),
-          'learningObjective', BTRIM(workspace.learning_objective),
-          'audience', BTRIM(workspace.audience),
-          'assetType', workspace.asset_type,
-          'duration', workspace.duration_seconds
-        )
+      WITH invalidated_calibration AS (
+        UPDATE course_setup_calibrations AS calibration
+        SET
+          review_status = 'needs_review',
+          review_result = NULL,
+          reviewed_setup = NULL,
+          reviewed_by_id = NULL,
+          reviewed_by_name = NULL,
+          reviewed_by_email = NULL,
+          reviewed_at = NULL,
+          record_updated_at = NOW()
+        FROM draft_workspaces AS workspace
+        WHERE calibration.workspace_id = workspace.id
+          AND calibration.workspace_id = ${id}
+          AND workspace.created_by_id = ${userId}
+          AND workspace.kyron_draft_id IS NULL
+          AND workspace.status IN ('editing', 'error')
+          AND calibration.review_status = 'reviewed'
+          AND calibration.reviewed_setup IS DISTINCT FROM JSONB_BUILD_OBJECT(
+            'name', BTRIM(workspace.name),
+            'description', BTRIM(workspace.description),
+            'learningObjective', BTRIM(workspace.learning_objective),
+            'audience', BTRIM(workspace.audience),
+            'assetType', workspace.asset_type,
+            'duration', workspace.duration_seconds
+          )
+        RETURNING calibration.workspace_id
+      ),
+      updated_batch_workspace AS (
+        UPDATE draft_workspaces AS workspace
+        SET
+          setup_status = 'needs_review',
+          setup_status_message = 'Course setup changed. Human review is required.',
+          record_updated_at = NOW()
+        FROM invalidated_calibration
+        WHERE workspace.id = invalidated_calibration.workspace_id
+          AND workspace.batch_id IS NOT NULL
+        RETURNING workspace.batch_id
+      )
+      UPDATE draft_batches AS batch
+      SET record_updated_at = NOW()
+      WHERE batch.id IN (SELECT batch_id FROM updated_batch_workspace)
     `,
   ]);
   const updatedRows = results[0] as DraftWorkspaceRow[];

@@ -30,7 +30,7 @@ keeping a human responsible for reviewing and submitting the course setup.
 
 - Resumable, autosaved workspaces
 - AI-assisted course setup with editable results
-- Human-reviewed calibration snapshots for single-asset AI recommendations
+- Human-reviewed calibration snapshots for individual and batch AI recommendations
 - Manual course setup
 - Kyron draft creation
 - Browser polling and explicit list synchronization
@@ -92,6 +92,8 @@ keeping a human responsible for reviewing and submitting the course setup.
 - DOCX, PDF, and PPTX text is extracted once and cached in Neon for reuse.
 - Course setup generation runs for two workspaces at a time. Each result or
   error is persisted independently, so one failed file does not fail the batch.
+- Each successful generation stores the AI baseline and prompt/model metadata
+  in the same calibration table used by an individual workspace.
 - Generated setups require human review before selected workspaces can be
   submitted to Kyron.
 - PDF and PPTX sources may optionally be attached during review; DOCX is used
@@ -107,8 +109,9 @@ workspace, file, and batch has a stable owner.
 
 ## Course setup calibration
 
-- Single-asset AI generation stores only the latest successful recommendation
-  for the active review cycle, together with its prompt version and model.
+- Individual and batch AI generation store only the latest successful
+  recommendation for each workspace's active review cycle, together with its
+  prompt version and model.
 - Human edits do not change the AI baseline. Marking a setup reviewed saves the
   current six course fields and authenticated reviewer identity.
 - Editing an approved setup invalidates that approval. Successful regeneration

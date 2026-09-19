@@ -107,10 +107,10 @@ The workspace references its Kyron record after successful submission.
 
 ### `course_setup_calibrations`
 
-Stores one active single-workspace review cycle: the latest successful AI
-baseline, prompt/model metadata, human-reviewed setup and reviewer, and the
-exact setup accepted by Kyron. It intentionally does not store full generation
-history.
+Stores one active review cycle per AI-generated workspace, including Batch
+workspaces: the latest successful AI baseline, prompt/model metadata,
+human-reviewed setup and reviewer, and the exact setup accepted by Kyron. It
+intentionally does not store full generation history.
 
 ## Error model
 

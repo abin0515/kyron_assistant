@@ -3,14 +3,10 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 
 import {
-  claimBatchWorkspaceSetup,
-  completeBatchWorkspaceSetup,
   createBatchWithWorkspaces,
   deleteBatch,
-  failBatchWorkspaceSetup,
   getBatchById,
   listBatchesByUser,
-  markBatchWorkspaceReviewed,
 } from "@/server/batches/repository";
 import type {
   DeleteDraftBatchResult,
@@ -19,7 +15,14 @@ import type {
   PageRequest,
   PageResult,
 } from "@/server/http/pagination";
-import { generateCourseSetup } from "@/server/drafts/course-setup/service";
+import {
+  claimBatchCourseSetupGeneration,
+  completeBatchCourseSetupGeneration,
+  ensureBatchCourseSetupCalibration,
+  failBatchCourseSetupGeneration,
+  markCourseSetupReviewed,
+} from "@/server/drafts/course-setup-calibrations/repository";
+import { generateCourseSetupWithMetadata } from "@/server/drafts/course-setup/service";
 import { updateCurrentWorkspaceSourceFiles } from "@/server/drafts/workspace-source-files/service";
 import { updateDraftWorkspace } from "@/server/drafts/workspaces/repository";
 import { getCurrentUser } from "@/server/identity/current-user";
@@ -132,10 +135,12 @@ export async function generateCurrentUserBatchSetups(
   );
 
   await runWithConcurrency(targets, GENERATION_CONCURRENCY, async (workspace) => {
-    const claimed = await claimBatchWorkspaceSetup(
+    const generationToken = randomUUID();
+    const claimed = await claimBatchCourseSetupGeneration(
       batchId,
       workspace.id,
       user.id,
+      generationToken,
     );
 
     if (!claimed) {
@@ -143,21 +148,29 @@ export async function generateCurrentUserBatchSetups(
     }
 
     try {
-      const setup = await generateCourseSetup({
+      const result = await generateCourseSetupWithMetadata({
         brief: "",
         workspaceId: workspace.id,
       });
-      await completeBatchWorkspaceSetup(
+      const completed = await completeBatchCourseSetupGeneration(
         batchId,
         workspace.id,
         user.id,
-        setup,
+        generationToken,
+        result,
       );
+
+      if (!completed) {
+        throw new Error(
+          "The workspace changed while the course setup was being generated.",
+        );
+      }
     } catch (error) {
-      await failBatchWorkspaceSetup(
+      await failBatchCourseSetupGeneration(
         batchId,
         workspace.id,
         user.id,
+        generationToken,
         errorMessage(error),
       );
     }
@@ -199,6 +212,12 @@ export async function reviewCurrentUserBatchWorkspace(
     );
   }
 
+  await ensureBatchCourseSetupCalibration(
+    batchId,
+    workspaceId,
+    user.id,
+  );
+
   const input: UpdateDraftWorkspaceRequest = setup;
   const workspace = await updateDraftWorkspace(workspaceId, user.id, input);
 
@@ -212,11 +231,7 @@ export async function reviewCurrentUserBatchWorkspace(
     attachToKyron ? [batchWorkspace.sourceFile.id] : [],
   );
 
-  const reviewed = await markBatchWorkspaceReviewed(
-    batchId,
-    workspaceId,
-    user.id,
-  );
+  const reviewed = await markCourseSetupReviewed(workspaceId, user);
 
   if (!reviewed) {
     throw new BatchValidationError(
