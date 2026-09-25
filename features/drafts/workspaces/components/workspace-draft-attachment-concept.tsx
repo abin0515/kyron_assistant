@@ -57,7 +57,7 @@ export function WorkspaceDraftAttachmentConcept({
   }
 
   return (
-    <section className="border-border grid gap-3 border-t pt-5 sm:col-span-2">
+    <section className="border-border min-w-0 grid gap-3 border-t pt-5 sm:col-span-2">
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
         <div className="grid gap-1">
           <p className="text-sm font-semibold">Draft attachment (optional)</p>
@@ -79,7 +79,7 @@ export function WorkspaceDraftAttachmentConcept({
       </div>
 
       {attachment ? (
-        <div className="border-border flex items-center gap-3 rounded-xl border bg-white px-4 py-3">
+        <div className="border-border min-w-0 flex items-center gap-3 overflow-hidden rounded-xl border bg-white px-4 py-3">
           <span className="bg-muted grid size-9 shrink-0 place-items-center rounded-lg">
             <FileText aria-hidden="true" className="size-4" />
           </span>
@@ -89,7 +89,10 @@ export function WorkspaceDraftAttachmentConcept({
               {attachment.type.toUpperCase()} · {formatFileSize(attachment.size)}
             </p>
           </div>
-          <Badge className="hidden bg-white sm:inline-flex" variant="outline">
+          <Badge
+            className="hidden shrink-0 bg-white sm:inline-flex"
+            variant="outline"
+          >
             Draft attachment
           </Badge>
           {!disabled ? (

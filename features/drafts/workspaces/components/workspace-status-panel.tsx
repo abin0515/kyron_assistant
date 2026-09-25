@@ -64,9 +64,9 @@ export function WorkspaceStatusPanel({
   const canSubmit = ready && saved && !submissionBusy;
 
   return (
-    <Card className="sticky top-24 min-w-0 gap-0 rounded-xl border-border py-0 ring-1 ring-border">
-      <CardHeader className="flex flex-row items-center justify-between border-b border-border px-5 py-4">
-        <CardTitle className="text-base font-light">Draft readiness</CardTitle>
+    <Card className="sticky top-20 min-w-0 gap-0 py-0">
+      <CardHeader className="flex flex-row items-center justify-between border-b border-border/80 px-5 py-4">
+        <CardTitle className="text-base font-medium">Draft readiness</CardTitle>
         <DraftStatusBadge
           status={workspace.status === "error" ? "attention" : "editing"}
         />
@@ -85,13 +85,13 @@ export function WorkspaceStatusPanel({
         </div>
 
         {submissionError || workspace.status === "error" ? (
-          <p className="text-sm leading-relaxed text-primary" role="alert">
+          <p className="rounded-lg bg-destructive/5 p-3 text-sm leading-relaxed text-destructive" role="alert">
             {submissionError || workspace.statusMessage}
           </p>
         ) : null}
 
         {workspace.courseSetupCalibration ? (
-          <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-muted/30 p-3">
+          <label className="flex cursor-pointer items-start gap-3 rounded-lg bg-muted/45 p-3">
             <input
               checked={includeInCalibration}
               className="mt-0.5 size-4 shrink-0 accent-primary"
@@ -114,7 +114,7 @@ export function WorkspaceStatusPanel({
         ) : null}
 
         <Button
-          className="min-h-10 w-full font-semibold"
+          className="w-full font-semibold"
           disabled={!canSubmit}
           onClick={onSubmit}
           type="button"
@@ -166,9 +166,9 @@ function SubmittedDraftStatus({
   const displayStatus = getPollingDraftDisplayStatus(pollingState.phase);
 
   return (
-    <Card className="sticky top-24 min-w-0 gap-0 rounded-xl border-border py-0 ring-1 ring-border">
-      <CardHeader className="flex flex-row items-center justify-between border-b border-border px-5 py-4">
-        <CardTitle className="text-base font-light">Draft status</CardTitle>
+    <Card className="sticky top-20 min-w-0 gap-0 py-0">
+      <CardHeader className="flex flex-row items-center justify-between border-b border-border/80 px-5 py-4">
+        <CardTitle className="text-base font-medium">Draft status</CardTitle>
         <DraftStatusBadge status={displayStatus} />
       </CardHeader>
       <CardContent className="grid gap-5 px-5 py-5">
@@ -274,7 +274,7 @@ function ReadinessItem({
       ) : (
         <TriangleAlert
           aria-hidden="true"
-          className="size-4 shrink-0 text-primary"
+          className="size-4 shrink-0 text-warning"
         />
       )}
       {children}

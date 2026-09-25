@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  CircleAlert,
   FileStack,
   HardDrive,
   RefreshCw,
@@ -12,6 +11,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { InlineNotice } from "@/components/ui/inline-notice";
+import { PageHeader } from "@/components/ui/page-header";
 import {
   deleteSourceFile,
   listSourceFiles,
@@ -304,21 +305,16 @@ export function SourceLibrary() {
 
   return (
     <div className="grid gap-6">
-      <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-        <div className="grid gap-1.5">
-          <h1 className="font-heading text-[1.8rem] leading-tight font-light tracking-[-0.025em]">
-            Source Library
-          </h1>
-          <p className="text-muted-foreground max-w-2xl text-sm">
-            Upload reusable course materials and see whether they are linked to
-            draft workspaces.
-          </p>
-        </div>
-        <Button onClick={() => setUploadOpen(true)} size="lg" type="button">
-          <Upload aria-hidden="true" />
-          Upload files
-        </Button>
-      </header>
+      <PageHeader
+        actions={
+          <Button onClick={() => setUploadOpen(true)} size="lg" type="button">
+            <Upload aria-hidden="true" />
+            Upload files
+          </Button>
+        }
+        description="Upload reusable course materials and see whether they are linked to draft workspaces."
+        title="Source Library"
+      />
 
       <SourceSummary
         linkedFiles={summary.linkedFiles}
@@ -326,8 +322,8 @@ export function SourceLibrary() {
         totalFiles={pagination.totalCount}
       />
 
-      <section className="bg-card overflow-hidden rounded-xl ring-1 ring-border">
-        <div className="border-border grid gap-4 border-b px-4 py-4 sm:px-5">
+      <section className="overflow-hidden rounded-xl border border-border/90 bg-card">
+        <div className="grid gap-4 border-b border-border/80 px-4 py-5 sm:px-5">
           <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-center">
             <div>
               <h2 className="text-base font-semibold">All source files</h2>
@@ -456,7 +452,7 @@ function SourceFileControls({
           className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2"
         />
         <Input
-          className="h-9 bg-white pl-9"
+          className="pl-9"
           onChange={(event) => onQueryChange(event.target.value)}
           placeholder="Search by file name"
           type="search"
@@ -466,7 +462,7 @@ function SourceFileControls({
       <label>
         <span className="sr-only">Filter by file type</span>
         <select
-          className="border-border h-9 w-full rounded-lg border bg-white px-3 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/30"
+          className="h-10 w-full rounded-lg border border-input bg-card px-3.5 text-sm shadow-xs outline-none focus:border-ring focus:ring-3 focus:ring-ring/20"
           onChange={(event) =>
             onTypeChange(event.target.value as SourceFileTypeFilter)
           }
@@ -481,7 +477,7 @@ function SourceFileControls({
       <label>
         <span className="sr-only">Sort source files</span>
         <select
-          className="border-border h-9 w-full rounded-lg border bg-white px-3 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/30"
+          className="h-10 w-full rounded-lg border border-input bg-card px-3.5 text-sm shadow-xs outline-none focus:border-ring focus:ring-3 focus:ring-ring/20"
           onChange={(event) =>
             onSortChange(event.target.value as SourceFileSort)
           }
@@ -524,12 +520,16 @@ function SourceSummary({
   ];
 
   return (
-    <section className="grid gap-3 sm:grid-cols-3">
+    <section className="grid overflow-hidden rounded-xl border border-border/90 bg-card sm:grid-cols-3 sm:divide-x sm:divide-border/80">
       {items.map((item) => (
-        <div className="bg-card rounded-xl p-4 ring-1 ring-border" key={item.label}>
-          <div className="text-muted-foreground [&>svg]:size-4">{item.icon}</div>
-          <p className="mt-4 text-2xl font-semibold">{item.value}</p>
-          <p className="text-muted-foreground mt-1 text-xs">{item.label}</p>
+        <div className="flex items-center gap-3 border-b border-border/80 p-4 last:border-b-0 sm:border-b-0 sm:px-5" key={item.label}>
+          <span className="grid size-9 place-items-center rounded-lg bg-muted text-muted-foreground [&>svg]:size-4">
+            {item.icon}
+          </span>
+          <div>
+            <p className="text-lg font-semibold leading-none">{item.value}</p>
+            <p className="mt-1.5 text-xs text-muted-foreground">{item.label}</p>
+          </div>
         </div>
       ))}
     </section>
@@ -544,19 +544,17 @@ function FeedbackMessage({
   onDismiss: () => void;
 }) {
   return (
-    <div
-      aria-live="polite"
-      className="border-border bg-muted/30 flex items-start gap-2 border-b px-5 py-3 text-xs"
+    <InlineNotice
+      actions={
+        <button className="font-medium" onClick={onDismiss} type="button">
+          Dismiss
+        </button>
+      }
+      className="rounded-none border-x-0 border-t-0 text-xs"
+      tone="success"
     >
-      <span>{message}</span>
-      <button
-        className="text-muted-foreground hover:text-foreground ml-auto font-medium"
-        onClick={onDismiss}
-        type="button"
-      >
-        Dismiss
-      </button>
-    </div>
+      {message}
+    </InlineNotice>
   );
 }
 
@@ -568,21 +566,26 @@ function ErrorMessage({
   onRetry: () => void;
 }) {
   return (
-    <div className="border-border text-destructive flex items-start gap-2 border-b px-5 py-3 text-xs">
-      <CircleAlert aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
-      <span>{message}</span>
-      <button className="ml-auto font-semibold" onClick={onRetry} type="button">
-        Try again
-      </button>
-    </div>
+    <InlineNotice
+      actions={
+        <button className="font-semibold" onClick={onRetry} type="button">
+          Try again
+        </button>
+      }
+      className="rounded-none border-x-0 border-t-0 text-xs"
+      tone="error"
+    >
+      {message}
+    </InlineNotice>
   );
 }
 
 function LoadingFiles() {
   return (
-    <div className="grid min-h-56 place-items-center px-5 py-12 text-sm text-muted-foreground">
-      <RefreshCw aria-hidden="true" className="mb-3 size-5 animate-spin" />
-      Loading source files...
+    <div className="grid gap-3 px-5 py-6" aria-label="Loading source files">
+      {[0, 1, 2, 3].map((item) => (
+        <div className="h-14 animate-pulse rounded-lg bg-muted/70" key={item} />
+      ))}
     </div>
   );
 }

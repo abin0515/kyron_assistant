@@ -257,7 +257,7 @@ export function SourceUploadDialog({
       <section
         aria-labelledby="source-upload-title"
         aria-modal="true"
-        className="bg-card max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl ring-1 ring-black/10"
+        className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-border bg-card shadow-2xl"
         role="dialog"
       >
         <header className="border-border flex items-start justify-between gap-4 border-b px-5 py-4">
@@ -425,7 +425,7 @@ export function SourceUploadDialog({
                           <UploadProgress percentage={item.progress} />
                         ) : null}
                         {item.status === "uploaded" ? (
-                          <p className="mt-2 flex items-center gap-1.5 text-xs font-medium text-emerald-700">
+                          <p className="mt-2 flex items-center gap-1.5 text-xs font-medium text-success">
                             <CircleCheck
                               aria-hidden="true"
                               className="size-3.5"

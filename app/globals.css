@@ -31,6 +31,14 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-surface-subtle: var(--surface-subtle);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -55,7 +63,7 @@
 }
 
 :root {
-  --background: #f7f7f7;
+  --background: #f6f6f5;
   --foreground: var(--color-cpe-black);
   --card: var(--color-cpe-white);
   --card-foreground: var(--color-cpe-black);
@@ -65,13 +73,21 @@
   --primary-foreground: var(--color-cpe-white);
   --secondary: var(--color-cpe-white);
   --secondary-foreground: var(--color-cpe-dark-gray);
-  --muted: var(--color-cpe-light-gray);
-  --muted-foreground: var(--color-cpe-gray);
-  --accent: var(--color-cpe-light-gray);
+  --muted: #eff0f0;
+  --muted-foreground: #687078;
+  --accent: #f2e9eb;
   --accent-foreground: var(--color-cpe-black);
-  --destructive: var(--color-cpe-red);
-  --border: var(--color-cpe-light-gray);
-  --input: var(--color-cpe-light-gray);
+  --destructive: #b42335;
+  --destructive-foreground: #ffffff;
+  --warning: #9a6412;
+  --warning-foreground: #5f3d08;
+  --success: #287a51;
+  --success-foreground: #175236;
+  --info: #3e718a;
+  --info-foreground: #28556b;
+  --surface-subtle: #fafafa;
+  --border: #dedfdf;
+  --input: #d7d9da;
   --ring: var(--color-cpe-red);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
@@ -98,5 +114,27 @@
   }
   html {
     @apply font-sans;
+  }
+  button,
+  a,
+  input,
+  textarea,
+  select,
+  summary {
+    @apply transition-colors duration-150;
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--primary) 20%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
   }
 }

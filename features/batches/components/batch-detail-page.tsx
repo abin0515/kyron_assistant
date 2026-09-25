@@ -12,6 +12,8 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
+import { InlineNotice } from "@/components/ui/inline-notice";
+import { PageHeader } from "@/components/ui/page-header";
 import {
   generateBatchSetups,
   getBatch,
@@ -289,24 +291,8 @@ export function BatchDetailPage({ batchId }: { batchId: string }) {
 
   return (
     <div className="grid gap-6">
-      <header className="grid gap-4">
-        <Link
-          className="inline-flex w-fit items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
-          href="/batches"
-        >
-          <ArrowLeft aria-hidden="true" className="size-4" />
-          Back to batches
-        </Link>
-        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-          <div className="grid gap-1.5">
-            <h1 className="text-[1.8rem] leading-tight font-bold tracking-[-0.025em]">
-              {batch.name}
-            </h1>
-            <p className="max-w-2xl text-sm text-muted-foreground">
-              Review AI-generated setups and submit ready workspaces independently.
-              Each workspace also appears on the Drafts page.
-            </p>
-          </div>
+      <PageHeader
+        actions={
           <Link
             className={buttonVariants({ variant: "outline" })}
             href="/drafts"
@@ -314,15 +300,26 @@ export function BatchDetailPage({ batchId }: { batchId: string }) {
             View all drafts
             <ExternalLink aria-hidden="true" />
           </Link>
-        </div>
-      </header>
+        }
+        description="Review AI-generated setups and submit ready workspaces independently. Each workspace also appears on the Drafts page."
+        eyebrow={
+          <Link
+            className="inline-flex w-fit items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
+            href="/batches"
+          >
+            <ArrowLeft aria-hidden="true" className="size-4" />
+            Back to batches
+          </Link>
+        }
+        title={batch.name}
+      />
 
       {error ? <Message message={error} tone="error" /> : null}
       {feedback ? (
         <Message message={feedback} onClose={() => setFeedback("")} />
       ) : null}
 
-      <section className="overflow-hidden rounded-xl bg-card ring-1 ring-border">
+      <section className="overflow-hidden rounded-xl border border-border/90 bg-card">
         <div className="flex flex-col gap-4 border-b border-border px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h2 className="text-base font-bold">Batch workspaces</h2>
@@ -416,7 +413,7 @@ function BatchFilters({
   return (
     <nav
       aria-label="Workspace status filters"
-      className="flex gap-2 overflow-x-auto border-b border-border px-5 py-3"
+      className="flex gap-1.5 overflow-x-auto border-b border-border/80 bg-surface-subtle px-5 py-3"
     >
       {FILTERS.map((filter) => {
         const active = filter.value === activeFilter;
@@ -429,15 +426,15 @@ function BatchFilters({
             aria-pressed={active}
             className={
               active
-                ? "flex h-8 shrink-0 items-center gap-2 rounded-lg bg-foreground px-3 text-xs font-semibold text-white"
-                : "flex h-8 shrink-0 items-center gap-2 rounded-lg border border-border bg-background px-3 text-xs font-semibold text-muted-foreground hover:text-foreground"
+                ? "flex h-9 shrink-0 items-center gap-2 rounded-lg bg-accent px-3 text-xs font-semibold text-foreground shadow-xs"
+                : "flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-xs font-semibold text-muted-foreground hover:bg-muted/70 hover:text-foreground"
             }
             key={filter.value}
             onClick={() => onChange(filter.value)}
             type="button"
           >
             {filter.label}
-            <span className={active ? "text-white/65" : "text-muted-foreground"}>
+            <span className={active ? "text-primary" : "text-muted-foreground"}>
               {count}
             </span>
           </button>
@@ -461,7 +458,7 @@ function ConfirmationDialog({
       <section
         aria-labelledby="confirm-batch-title"
         aria-modal="true"
-        className="w-full max-w-md rounded-xl bg-card p-5 shadow-2xl"
+        className="w-full max-w-md rounded-2xl border border-border bg-card p-5 shadow-2xl"
         role="dialog"
       >
         <span className="grid size-10 place-items-center rounded-full bg-primary/10 text-primary">
@@ -497,27 +494,24 @@ function Message({
   tone?: "success" | "error";
 }) {
   return (
-    <div
-      className={
-        tone === "error"
-          ? "flex justify-between gap-3 rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive"
-          : "flex justify-between gap-3 rounded-xl border border-[#B9D8C7] bg-[#F3F8F5] px-4 py-3 text-sm text-[#23653F]"
+    <InlineNotice
+      actions={
+        onClose ? (
+          <button aria-label="Dismiss message" onClick={onClose} type="button">
+            <X aria-hidden="true" className="size-4" />
+          </button>
+        ) : undefined
       }
-      role={tone === "error" ? "alert" : "status"}
+      tone={tone}
     >
       {message}
-      {onClose ? (
-        <button aria-label="Dismiss message" onClick={onClose} type="button">
-          <X aria-hidden="true" className="size-4" />
-        </button>
-      ) : null}
-    </div>
+    </InlineNotice>
   );
 }
 
 function MissingBatch({ message }: { message: string }) {
   return (
-    <div className="grid min-h-96 place-items-center rounded-xl bg-card px-5 text-center ring-1 ring-border">
+    <div className="grid min-h-96 place-items-center rounded-xl border border-border bg-card px-5 text-center">
       <div>
         <Layers3 aria-hidden="true" className="mx-auto size-8 text-muted-foreground" />
         <h1 className="mt-4 text-xl font-bold">Batch not found</h1>
@@ -534,8 +528,9 @@ function MissingBatch({ message }: { message: string }) {
 
 function PageMessage({ message }: { message: string }) {
   return (
-    <div className="grid min-h-80 place-items-center rounded-xl bg-card text-sm text-muted-foreground ring-1 ring-border">
-      {message}
+    <div className="grid min-h-80 gap-4 rounded-xl border border-border bg-card p-6" aria-label={message}>
+      <div className="h-8 w-1/2 animate-pulse rounded bg-muted" />
+      <div className="h-48 animate-pulse rounded-lg bg-muted/70" />
     </div>
   );
 }

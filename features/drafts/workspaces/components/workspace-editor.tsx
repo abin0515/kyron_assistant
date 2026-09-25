@@ -1,12 +1,13 @@
 "use client";
 
-import { ArrowLeft, LoaderCircle } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { useDraftPolling } from "@/features/drafts/kyron-drafts/hooks/use-draft-polling";
 import { DraftApiError } from "@/features/drafts/shared/api-response";
 import { DraftStatusBadge } from "@/features/drafts/shared/components/draft-status-badge";
@@ -207,44 +208,42 @@ export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
   const ready = hasRequiredCourseSetup(workspace);
 
   return (
-    <div className="mx-auto grid max-w-6xl gap-6">
-      <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-        <div className="grid gap-4">
+    <div className="mx-auto grid max-w-6xl gap-7">
+      <PageHeader
+        description={
+          <div className="flex flex-wrap items-center gap-3">
+            <DraftStatusBadge
+              status={getWorkspaceEditorDisplayStatus(
+                workspace,
+                polling.state.phase,
+              )}
+            />
+            {!workspace.kyronDraftId ? (
+              <AutosaveStatus
+                onRetry={autosave.retrySave}
+                state={autosave.state}
+              />
+            ) : null}
+          </div>
+        }
+        eyebrow={
           <Link
             className={buttonVariants({
-              className: "w-fit",
+              className: "-ml-3 w-fit text-muted-foreground",
               size: "sm",
-              variant: "outline",
+              variant: "ghost",
             })}
             href="/drafts"
           >
             <ArrowLeft aria-hidden="true" />
             Back to drafts
           </Link>
-          <div className="grid gap-1.5">
-            <h1 className="font-heading text-[1.8rem] leading-tight font-light tracking-[-0.025em]">
-              {workspace.name || "Untitled draft"}
-            </h1>
-            <div className="flex flex-wrap items-center gap-3">
-              <DraftStatusBadge
-                status={getWorkspaceEditorDisplayStatus(
-                  workspace,
-                  polling.state.phase,
-                )}
-              />
-              {!workspace.kyronDraftId ? (
-                <AutosaveStatus
-                  onRetry={autosave.retrySave}
-                  state={autosave.state}
-                />
-              ) : null}
-            </div>
-          </div>
-        </div>
-      </header>
+        }
+        title={workspace.name || "Untitled draft"}
+      />
 
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="grid min-w-0 gap-6">
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_316px]">
+        <div className="grid min-w-0 gap-5">
           <CourseSourceCard
             disabled={locked}
             generatorState={generator.state}
@@ -298,12 +297,30 @@ function RegenerationDialog({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        onCancel();
+      }
+    }
+
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onCancel]);
+
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/45 p-4">
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-black/45 p-4"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onCancel();
+        }
+      }}
+    >
       <section
         aria-labelledby="regenerate-course-setup-title"
         aria-modal="true"
-        className="w-full max-w-md rounded-xl bg-card p-5 shadow-2xl"
+        className="w-full max-w-md rounded-2xl border border-border bg-card p-5 shadow-2xl"
         role="dialog"
       >
         <h2 className="text-lg font-bold" id="regenerate-course-setup-title">
@@ -337,10 +354,10 @@ function hasRequiredCourseSetup(workspace: DraftWorkspace): boolean {
 
 function LoadingState() {
   return (
-    <Card className="mx-auto max-w-2xl rounded-xl border-border ring-1 ring-border">
-      <CardContent className="flex items-center gap-3 px-6 py-12 text-sm text-muted-foreground">
-        <LoaderCircle aria-hidden="true" className="size-5 animate-spin" />
-        Loading draft workspace…
+    <Card className="mx-auto max-w-2xl">
+      <CardContent className="grid gap-4 px-6 py-8" aria-label="Loading draft workspace">
+        <div className="h-7 w-2/3 animate-pulse rounded bg-muted" />
+        <div className="h-40 animate-pulse rounded-lg bg-muted/70" />
       </CardContent>
     </Card>
   );
@@ -348,12 +365,12 @@ function LoadingState() {
 
 function ErrorState({ message }: { message: string }) {
   return (
-    <Card className="mx-auto max-w-2xl rounded-xl border-border ring-1 ring-border">
+    <Card className="mx-auto max-w-2xl">
       <CardContent className="grid gap-4 px-6 py-12">
         <h1 className="font-heading text-xl font-light">
           Workspace unavailable
         </h1>
-        <p className="text-sm text-primary" role="alert">
+        <p className="text-sm text-destructive" role="alert">
           {message}
         </p>
         <Link

@@ -1,7 +1,6 @@
 import {
   ExternalLink,
   FileText,
-  LoaderCircle,
   Plus,
 } from "lucide-react";
 import Link from "next/link";
@@ -58,7 +57,7 @@ export function WorkspaceRecords({
     <>
       {errorMessage ? (
         <p
-          className="border-b border-border bg-card px-5 py-3 text-sm text-primary"
+          className="border-b border-destructive/15 bg-destructive/5 px-5 py-3 text-sm text-destructive"
           role="alert"
         >
           {errorMessage}
@@ -88,7 +87,7 @@ export function WorkspaceRecords({
           </thead>
           <tbody className="divide-y divide-border">
             {records.map((record) => (
-              <tr className="h-14 hover:bg-muted/30" key={record.workspace.id}>
+              <tr className="h-16 transition-colors hover:bg-muted/35" key={record.workspace.id}>
                 <td className="max-w-[340px] px-5 py-3 font-medium">
                   <span className="block truncate">
                     {record.workspace.name || "Untitled draft"}
@@ -227,9 +226,10 @@ function canDeleteWorkspace(record: DraftRecord): boolean {
 
 function LoadingState() {
   return (
-    <CardContent className="flex items-center gap-3 px-6 py-12 text-sm text-muted-foreground">
-      <LoaderCircle aria-hidden="true" className="size-5 animate-spin" />
-      Loading saved drafts…
+    <CardContent className="grid gap-3 px-5 py-6" aria-label="Loading saved drafts">
+      {[0, 1, 2, 3].map((item) => (
+        <div className="h-12 animate-pulse rounded-lg bg-muted/70" key={item} />
+      ))}
     </CardContent>
   );
 }
@@ -238,7 +238,7 @@ function ErrorState({ errorMessage }: { errorMessage: string }) {
   return (
     <CardContent className="grid gap-2 px-6 py-12">
       <h2 className="font-bold">Drafts unavailable</h2>
-      <p className="text-sm text-primary" role="alert">
+      <p className="text-sm text-destructive" role="alert">
         {errorMessage}
       </p>
     </CardContent>

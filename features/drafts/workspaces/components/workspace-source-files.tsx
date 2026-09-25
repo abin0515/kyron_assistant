@@ -134,7 +134,7 @@ export function WorkspaceSourceFiles({
       </div>
 
       {aiFiles.length > 0 ? (
-        <ul className="border-border divide-border divide-y overflow-hidden rounded-xl border bg-white">
+        <ul className="divide-border divide-y overflow-hidden rounded-lg border border-border/80 bg-card">
           {aiFiles.map((file) => (
             <li className="flex items-center gap-3 px-4 py-3" key={file.id}>
               <span className="bg-muted grid size-9 shrink-0 place-items-center rounded-lg">
@@ -146,7 +146,7 @@ export function WorkspaceSourceFiles({
                   {file.type.toUpperCase()} · {formatFileSize(file.size)}
                 </p>
               </div>
-              <Badge className="hidden bg-white sm:inline-flex" variant="outline">
+              <Badge className="hidden sm:inline-flex" variant="neutral">
                 AI source
               </Badge>
               {!disabled ? (
@@ -171,7 +171,7 @@ export function WorkspaceSourceFiles({
           ))}
         </ul>
       ) : (
-        <div className="border-border bg-background grid justify-items-center gap-2 rounded-xl border border-dashed px-4 py-6 text-center">
+        <div className="grid justify-items-center gap-2 rounded-lg border border-dashed border-border bg-muted/20 px-4 py-6 text-center">
           <FilePlus2 aria-hidden="true" className="text-muted-foreground size-5" />
           <p className="text-sm font-semibold">No source files selected</p>
           <p className="text-muted-foreground text-xs">

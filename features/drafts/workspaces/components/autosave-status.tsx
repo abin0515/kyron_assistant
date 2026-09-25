@@ -11,7 +11,7 @@ export function AutosaveStatus({
 }) {
   if (state.phase === "error") {
     return (
-      <div className="flex flex-wrap items-center gap-2 text-xs text-primary" role="alert">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-destructive" role="alert">
         <TriangleAlert aria-hidden="true" className="size-4" />
         <span>{state.errorMessage ?? "Save failed."}</span>
         <button

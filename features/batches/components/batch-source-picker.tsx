@@ -80,10 +80,10 @@ export function BatchSourcePicker({
       <section
         aria-labelledby="batch-source-picker-title"
         aria-modal="true"
-        className="flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-card ring-1 ring-black/10"
+        className="flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
         role="dialog"
       >
-        <header className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
+        <header className="flex items-start justify-between gap-4 border-b border-border/80 px-5 py-5 sm:px-6">
           <div>
             <h2 className="text-lg font-bold" id="batch-source-picker-title">
               Select source files
@@ -104,7 +104,7 @@ export function BatchSourcePicker({
           </Button>
         </header>
 
-        <div className="grid gap-3 border-b border-border p-4 sm:grid-cols-[minmax(0,1fr)_11rem]">
+        <div className="grid gap-3 border-b border-border/80 bg-surface-subtle p-4 sm:grid-cols-[minmax(0,1fr)_11rem] sm:px-6">
           <label className="relative block">
             <span className="sr-only">Search source files</span>
             <Search
@@ -112,7 +112,7 @@ export function BatchSourcePicker({
               className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
             />
             <Input
-              className="h-9 bg-white pl-9"
+              className="pl-9"
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search Source Library"
               type="search"
@@ -122,7 +122,7 @@ export function BatchSourcePicker({
           <label>
             <span className="sr-only">Filter by file type</span>
             <select
-              className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/20"
+              className="h-10 w-full rounded-lg border border-input bg-card px-3.5 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/20"
               onChange={(event) =>
                 setTypeFilter(event.target.value as FileTypeFilter)
               }
@@ -149,7 +149,7 @@ export function BatchSourcePicker({
             <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border">
               {files.map((file) => (
                 <li key={file.id}>
-                  <label className="flex cursor-pointer items-center gap-3 px-4 py-3 hover:bg-muted/35">
+                  <label className="flex min-h-16 cursor-pointer items-center gap-3 px-4 py-3 hover:bg-muted/45">
                     <input
                       checked={selectedIds.includes(file.id)}
                       className="size-4 accent-primary"
@@ -167,7 +167,7 @@ export function BatchSourcePicker({
                         {file.type.toUpperCase()} · {formatFileSize(file.size)}
                       </span>
                     </span>
-                    <Badge variant="outline">
+                    <Badge variant={file.type === "docx" ? "neutral" : "info"}>
                       {file.type === "docx" ? "AI only" : "Attachment eligible"}
                     </Badge>
                   </label>
@@ -207,7 +207,7 @@ export function BatchSourcePicker({
           </p>
         ) : null}
 
-        <footer className="flex flex-col-reverse justify-between gap-3 border-t border-border px-5 py-4 sm:flex-row sm:items-center">
+        <footer className="flex flex-col-reverse justify-between gap-3 border-t border-border/80 bg-surface-subtle px-5 py-4 sm:flex-row sm:items-center sm:px-6">
           <div className="flex items-center gap-3">
             <label className="flex cursor-pointer items-center gap-2 text-xs font-medium">
               <input

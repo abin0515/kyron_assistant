@@ -32,9 +32,10 @@ repeatable workflows, clear status, readable data, and human review.
 | `cpe-white` | `#FFFFFF` | Main background and surfaces |
 
 Components use semantic roles such as `background`, `surface`, `foreground`,
-`muted`, `border`, `primary`, and `destructive` instead of brand values
-directly. Do not create red tints, colorful gradients, or decorative accent
-colors.
+`muted`, `border`, `primary`, `info`, `success`, `warning`, and `destructive`
+instead of brand values directly. Semantic status colors are functional, not
+decorative: use muted backgrounds and restrained text/border contrast. Do not
+create colorful gradients or use status colors as general decoration.
 
 Brand primitives use the `cpe-*` namespace. Product components should normally
 use semantic utilities such as `bg-primary`, `text-foreground`, and
@@ -44,16 +45,15 @@ use semantic utilities such as `bg-primary`, `text-foreground`, and
 
 | Status | Treatment |
 | --- | --- |
-| Editing | Light-gray surface, dark text, edit icon |
-| Saving | Gray text and spinner |
-| Generating | Dark-gray surface, white text, spinner |
-| Complete | White surface, black border, check icon |
-| Needs attention / Error | CPE Red text and border, warning icon |
-| Unavailable | CPE Red icon with an explicit text label |
+| Editing / queued | Neutral gray surface, dark text, edit or queue icon |
+| Saving / generating | Muted blue info surface, info text, spinner |
+| Complete / ready | Muted green success surface, success text, check icon |
+| Needs attention | Muted amber warning surface, warning text, warning icon |
+| Error / unavailable | Muted red destructive surface, destructive text and explicit label |
 
-Status must always include a label and, where useful, an icon. Additional
-semantic colors may be considered later only if usability testing shows that
-the brand palette is insufficient.
+Status must always include a label and, where useful, an icon. Brand red remains
+reserved for primary actions and brand emphasis; it should not represent every
+warning, progress state, or completed state.
 
 ## Typography
 

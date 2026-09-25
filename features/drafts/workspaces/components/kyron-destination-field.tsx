@@ -48,7 +48,7 @@ export function KyronDestinationField({
 
   return (
     <section
-      className={cn("grid gap-3 border-t border-border pt-5", className)}
+      className={cn("grid gap-3", className)}
     >
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
         <div className="grid gap-1">
@@ -70,8 +70,8 @@ export function KyronDestinationField({
         ) : null}
       </div>
 
-      <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3">
-        <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted">
+      <div className="flex items-center gap-3 rounded-lg bg-muted/45 px-4 py-3">
+        <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-card shadow-xs">
           <Folder aria-hidden="true" className="size-4" />
         </span>
         <div className="min-w-0 flex-1">
@@ -86,7 +86,7 @@ export function KyronDestinationField({
         </div>
         <CircleCheck
           aria-label="Destination selected"
-          className="size-4 shrink-0 text-emerald-700"
+          className="size-4 shrink-0 text-success"
         />
       </div>
 
@@ -261,10 +261,10 @@ function KyronFolderPickerDialog({
       <section
         aria-labelledby="kyron-folder-picker-title"
         aria-modal="true"
-        className="flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-card ring-1 ring-black/10"
+        className="flex max-h-[min(88vh,760px)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
         role="dialog"
       >
-        <header className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
+        <header className="flex items-start justify-between gap-4 border-b border-border/80 px-5 py-5 sm:px-6">
           <div>
             <h2 className="text-lg font-bold" id="kyron-folder-picker-title">
               Choose Kyron destination
@@ -285,7 +285,7 @@ function KyronFolderPickerDialog({
           </Button>
         </header>
 
-        <div className="border-b border-border bg-amber-50 px-5 py-3 text-amber-950">
+        <div className="border-b border-warning/15 bg-warning/5 px-5 py-3 text-warning-foreground sm:px-6">
           <p className="flex items-start gap-2 text-xs leading-5">
             <Info aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
             Changes made here affect the shared Kyron Studio library used by
@@ -293,7 +293,7 @@ function KyronFolderPickerDialog({
           </p>
         </div>
 
-        <div className="flex flex-col gap-3 border-b border-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 border-b border-border/80 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <FolderBreadcrumb
             path={browsePath}
             onBrowse={(index) => {
@@ -320,7 +320,7 @@ function KyronFolderPickerDialog({
         </div>
 
         {creating ? (
-          <div className="grid gap-2 border-b border-border bg-muted/25 px-5 py-4">
+          <div className="grid gap-3 border-b border-border/80 bg-surface-subtle px-5 py-4 sm:px-6">
             <label className="text-sm font-semibold" htmlFor="new-kyron-folder-name">
               {browsePath.length === 0 ? "New folder" : "New subfolder"} in{" "}
               {currentLocationName(browsePath)}
@@ -328,7 +328,7 @@ function KyronFolderPickerDialog({
             <div className="flex flex-col gap-2 sm:flex-row">
               <Input
                 autoFocus
-                className="h-9 bg-white"
+                className="bg-card"
                 disabled={creatingFolder}
                 id="new-kyron-folder-name"
                 maxLength={255}
@@ -394,7 +394,7 @@ function KyronFolderPickerDialog({
           </div>
         ) : null}
 
-        <div className="min-h-56 flex-1 overflow-y-auto p-4">
+        <div className="min-h-56 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
           {loading ? (
             <PickerMessage icon="loading" message="Loading folders…" />
           ) : folders.length > 0 ? (
@@ -409,11 +409,11 @@ function KyronFolderPickerDialog({
                   {pagination?.totalCount ?? folders.length} total
                 </p>
               </div>
-              <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border">
+              <ul className="divide-y divide-border/80 overflow-hidden rounded-xl border border-border/80">
                 {folders.map((folder) => (
                   <li key={folder.id}>
                     <button
-                      className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-muted/35"
+                      className="flex min-h-16 w-full items-center gap-3 px-4 py-3 text-left hover:bg-muted/45 focus-visible:bg-muted/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/30"
                       onClick={() => {
                         setLoading(true);
                         setBrowsePath((current) => [
@@ -466,7 +466,7 @@ function KyronFolderPickerDialog({
           )}
         </div>
 
-        <footer className="flex flex-col-reverse gap-3 border-t border-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <footer className="flex flex-col-reverse gap-3 border-t border-border/80 bg-surface-subtle px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <p className="min-w-0 truncate text-xs text-muted-foreground">
             Current location: {formatPath(browsePath)}
             {browsePath.length === 0 ? " (top level)" : ""}

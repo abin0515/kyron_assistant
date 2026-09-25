@@ -82,10 +82,10 @@ export function WorkspaceSourceFilePicker({
       <section
         aria-labelledby="workspace-source-picker-title"
         aria-modal="true"
-        className="bg-card flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl ring-1 ring-black/10"
+        className="flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
         role="dialog"
       >
-        <header className="border-border flex items-start justify-between gap-4 border-b px-5 py-4">
+        <header className="flex items-start justify-between gap-4 border-b border-border/80 px-5 py-5 sm:px-6">
           <div>
             <h2 className="text-lg font-bold" id="workspace-source-picker-title">
               Choose source files
@@ -108,7 +108,7 @@ export function WorkspaceSourceFilePicker({
           </Button>
         </header>
 
-        <div className="border-border grid gap-3 border-b p-4 sm:grid-cols-[minmax(0,1fr)_auto]">
+        <div className="grid gap-3 border-b border-border/80 bg-surface-subtle p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:px-6">
           <label className="relative block">
             <span className="sr-only">Search source files</span>
             <Search
@@ -116,7 +116,7 @@ export function WorkspaceSourceFilePicker({
               className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2"
             />
             <Input
-              className="h-9 bg-white pl-9"
+              className="pl-9"
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search Source Library"
               type="search"
@@ -148,7 +148,7 @@ export function WorkspaceSourceFilePicker({
             <ul className="border-border divide-border divide-y overflow-hidden rounded-xl border">
               {files.map((file) => (
                 <li key={file.id}>
-                  <label className="hover:bg-muted/35 flex cursor-pointer items-center gap-3 px-4 py-3">
+                  <label className="flex min-h-16 cursor-pointer items-center gap-3 px-4 py-3 hover:bg-muted/45">
                     <input
                       checked={selectedIds.includes(file.id)}
                       className="accent-primary size-4"
@@ -209,7 +209,7 @@ export function WorkspaceSourceFilePicker({
           </p>
         ) : null}
 
-        <footer className="border-border flex flex-col-reverse justify-between gap-3 border-t px-5 py-4 sm:flex-row sm:items-center">
+        <footer className="flex flex-col-reverse justify-between gap-3 border-t border-border/80 bg-surface-subtle px-5 py-4 sm:flex-row sm:items-center sm:px-6">
           <button
             className="text-muted-foreground hover:text-foreground w-fit text-xs font-medium"
             disabled={busy || loading}

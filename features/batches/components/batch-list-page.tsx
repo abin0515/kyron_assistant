@@ -18,6 +18,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { InlineNotice } from "@/components/ui/inline-notice";
+import { PageHeader } from "@/components/ui/page-header";
 import {
   deleteBatch,
   listBatches,
@@ -108,35 +110,33 @@ export function BatchListPage() {
 
   return (
     <div className="grid gap-6">
-      <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-        <div className="grid gap-1.5">
-          <h1 className="text-[1.8rem] leading-tight font-bold tracking-[-0.025em]">
-            Batch drafts
-          </h1>
-          <p className="max-w-2xl text-sm text-muted-foreground">
-            Select a batch to inspect its workspace progress and open the full
-            management view.
-          </p>
-        </div>
-        <Link className={buttonVariants()} href="/batches/new">
-          <Plus aria-hidden="true" />
-          New batch
-        </Link>
-      </header>
+      <PageHeader
+        actions={
+          <Link className={buttonVariants({ size: "lg" })} href="/batches/new">
+            <Plus aria-hidden="true" />
+            New batch
+          </Link>
+        }
+        description="Select a batch to inspect its workspace progress and open the full management view."
+        title="Batch drafts"
+      />
 
       {error ? (
-        <p className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive" role="alert">
-          {error}
-        </p>
+        <InlineNotice tone="error">{error}</InlineNotice>
       ) : null}
 
       {loading ? (
-        <div className="grid min-h-80 place-items-center rounded-xl bg-card text-sm text-muted-foreground ring-1 ring-border">
-          Loading batches…
+        <div className="grid min-h-80 grid-cols-[minmax(0,280px)_1fr] overflow-hidden rounded-xl border border-border bg-card p-4" aria-label="Loading batches">
+          <div className="grid content-start gap-3 border-r border-border pr-4">
+            {[0, 1, 2, 3].map((item) => (
+              <div className="h-20 animate-pulse rounded-lg bg-muted/70" key={item} />
+            ))}
+          </div>
+          <div className="ml-5 h-44 animate-pulse rounded-lg bg-muted/60" />
         </div>
       ) : null}
 
-      {!loading ? <section className="grid min-h-[610px] overflow-hidden rounded-xl bg-card ring-1 ring-border lg:grid-cols-[340px_minmax(0,1fr)]">
+      {!loading ? <section className="grid min-h-[610px] overflow-hidden rounded-xl border border-border/90 bg-card lg:grid-cols-[340px_minmax(0,1fr)]">
         <aside
           className={cn(
             "border-border lg:block lg:border-r",
@@ -284,7 +284,7 @@ function BatchNavigatorItem({
       aria-pressed={active}
       className={cn(
         "grid w-full gap-3 p-4 text-left transition-colors",
-        active ? "bg-primary/[0.07]" : "hover:bg-muted/45",
+        active ? "bg-accent" : "hover:bg-muted/45",
       )}
       onClick={onSelect}
       type="button"
@@ -305,7 +305,7 @@ function BatchNavigatorItem({
         </span>
         <span className="h-1 overflow-hidden rounded-full bg-muted">
           <span
-            className="block h-full rounded-full bg-primary"
+            className="block h-full rounded-full bg-success"
             style={{
               width: `${batch.workspaces.length === 0 ? 0 : (complete / batch.workspaces.length) * 100}%`,
             }}
@@ -401,9 +401,9 @@ function BatchInspector({
 
 function StatusMark({ status }: { status: BatchOverallStatus }) {
   const config = {
-    active: { className: "bg-[#4A809B]", label: "Active" },
-    attention: { className: "bg-primary", label: "Needs attention" },
-    complete: { className: "bg-[#3C8B63]", label: "Complete" },
+    active: { className: "bg-info", label: "Active" },
+    attention: { className: "bg-warning", label: "Needs attention" },
+    complete: { className: "bg-success", label: "Complete" },
   }[status];
 
   return (
@@ -423,8 +423,14 @@ function BatchStateBadge({ status }: { status: BatchOverallStatus }) {
   }[status];
   const Icon = config.icon;
 
+  const variant = {
+    active: "info",
+    attention: "warning",
+    complete: "success",
+  }[status] as "info" | "warning" | "success";
+
   return (
-    <Badge variant="outline">
+    <Badge variant={variant}>
       <Icon aria-hidden="true" />
       {config.label}
     </Badge>
@@ -443,11 +449,22 @@ function WorkspaceState({ status }: { status: BatchDraftStatus }) {
     submitting: "Submitting",
   };
 
-  return (
-    <span className="shrink-0 rounded-full border border-border px-2.5 py-1 text-xs font-semibold">
-      {labels[status]}
-    </span>
-  );
+  const variant = {
+    complete: "success",
+    generating: "info",
+    kyron_error: "destructive",
+    ready: "success",
+    setup_error: "destructive",
+    setup_generating: "info",
+    setup_pending: "neutral",
+    submitting: "info",
+  }[status] as
+    | "success"
+    | "info"
+    | "destructive"
+    | "neutral";
+
+  return <Badge variant={variant}>{labels[status]}</Badge>;
 }
 
 function DeleteBatchDialog({
@@ -464,7 +481,7 @@ function DeleteBatchDialog({
       <section
         aria-labelledby="delete-batch-title"
         aria-modal="true"
-        className="w-full max-w-md rounded-xl bg-card p-5 shadow-2xl"
+        className="w-full max-w-md rounded-2xl border border-border bg-card p-5 shadow-2xl"
         role="dialog"
       >
         <div className="flex items-start justify-between gap-4">

@@ -49,7 +49,7 @@ export function NewDraftWorkspace() {
 
   return (
     <div className="grid min-h-[calc(100vh-8rem)] place-items-center py-8 text-foreground">
-      <Card className="w-full max-w-md border-border bg-card ring-1 ring-border">
+      <Card className="w-full max-w-md bg-card shadow-sm">
         <CardContent className="grid justify-items-center gap-5 px-6 py-10 text-center">
           {errorMessage ? (
             <>

@@ -24,7 +24,7 @@ export function WorkspaceListFilters({
   return (
     <nav
       aria-label="Draft status filters"
-      className="flex gap-2 overflow-x-auto pb-1"
+      className="flex gap-1.5 overflow-x-auto rounded-xl border border-border/80 bg-card p-1.5"
     >
       {DRAFT_FILTERS.map((filter) => {
         const active = filter.value === activeFilter;
@@ -37,8 +37,8 @@ export function WorkspaceListFilters({
             aria-pressed={active}
             className={
               active
-                ? "flex h-9 shrink-0 items-center gap-2 rounded-lg bg-foreground px-3 text-sm font-semibold text-primary-foreground"
-                : "flex h-9 shrink-0 items-center gap-2 rounded-lg border border-border bg-card px-3 text-sm font-medium text-secondary-foreground"
+                ? "flex h-9 shrink-0 items-center gap-2 rounded-lg bg-accent px-3 text-sm font-semibold text-foreground shadow-xs"
+                : "flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-medium text-muted-foreground hover:bg-muted/70 hover:text-foreground"
             }
             key={filter.value}
             onClick={() => onChange(filter.value)}
@@ -48,7 +48,7 @@ export function WorkspaceListFilters({
             <span
               className={
                 active
-                  ? "text-xs text-primary-foreground/70"
+                  ? "text-xs text-primary"
                   : "text-xs text-muted-foreground"
               }
             >

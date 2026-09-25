@@ -63,10 +63,10 @@ export function BatchReviewDrawer({
       <section
         aria-labelledby="batch-review-title"
         aria-modal="true"
-        className="relative z-10 flex h-full w-full max-w-xl flex-col overflow-hidden bg-card shadow-2xl"
+        className="relative z-10 flex h-full w-full max-w-2xl flex-col overflow-hidden border-l border-border bg-card shadow-2xl"
         role="dialog"
       >
-        <header className="flex items-start justify-between gap-4 border-b border-border px-5 py-4 sm:px-6">
+        <header className="flex items-start justify-between gap-4 border-b border-border/80 px-5 py-5 sm:px-6">
           <div className="min-w-0">
             <p className="text-xs font-semibold tracking-wide text-primary uppercase">
               Review AI suggestion
@@ -89,7 +89,7 @@ export function BatchReviewDrawer({
           </Button>
         </header>
 
-        <div className="grid flex-1 gap-5 overflow-y-auto px-5 py-5 sm:px-6">
+        <div className="grid flex-1 content-start gap-5 overflow-y-auto px-5 py-5 sm:px-6 sm:py-6">
           <Field label="Title">
             <Input
               onChange={(event) => updateSetup("name", event.target.value)}
@@ -120,7 +120,7 @@ export function BatchReviewDrawer({
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Asset type">
               <select
-                className="h-11 w-full rounded-xl border border-input bg-background px-3.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/20"
+              className="h-10 w-full rounded-lg border border-input bg-card px-3.5 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/20"
                 onChange={(event) =>
                   updateSetup(
                     "assetType",
@@ -136,7 +136,7 @@ export function BatchReviewDrawer({
             </Field>
             <Field label="Duration">
               <select
-                className="h-11 w-full rounded-xl border border-input bg-background px-3.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/20"
+              className="h-10 w-full rounded-lg border border-input bg-card px-3.5 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/20"
                 onChange={(event) =>
                   updateSetup(
                     "duration",
@@ -153,7 +153,7 @@ export function BatchReviewDrawer({
             </Field>
           </div>
 
-          <section className="rounded-xl border border-border bg-muted/25 p-4">
+          <section className="rounded-lg bg-muted/40 p-4">
             <div className="flex items-start gap-3">
               <input
                 checked={attachmentSupported && attachToKyron}
@@ -176,7 +176,7 @@ export function BatchReviewDrawer({
             </div>
           </section>
 
-          <section className="rounded-xl border border-border bg-muted/25 p-4">
+          <section className="rounded-lg bg-muted/40 p-4">
             <div className="flex items-start gap-3">
               <input
                 checked={includeInCalibration}
@@ -209,7 +209,7 @@ export function BatchReviewDrawer({
           />
         </div>
 
-        <footer className="border-t border-border bg-card px-5 py-4 sm:px-6">
+        <footer className="border-t border-border/80 bg-surface-subtle px-5 py-4 sm:px-6">
           {!complete ? (
             <p className="mb-3 text-xs text-destructive" role="alert">
               Complete all four course fields before saving these changes.

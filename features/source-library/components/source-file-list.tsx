@@ -63,7 +63,7 @@ function DesktopFileTable(props: SourceFileListProps) {
         </thead>
         <tbody>
           {props.files.map((file) => (
-            <tr className="border-border border-b last:border-b-0" key={file.id}>
+            <tr className="border-border border-b transition-colors last:border-b-0 hover:bg-muted/35" key={file.id}>
               <td className="px-5 py-4">
                 <FileIdentity file={file} />
               </td>
@@ -117,9 +117,12 @@ function FileIdentity({ file }: { file: SourceFileListRecord }) {
       </span>
       <div className="min-w-0">
         <p className="truncate text-sm font-semibold">{file.name}</p>
-        <p className="text-muted-foreground mt-1 text-xs uppercase">
-          {file.type} · {formatFileSize(file.size)}
-        </p>
+        <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="rounded bg-muted px-1.5 py-0.5 font-semibold tracking-wide uppercase">
+            {file.type}
+          </span>
+          <span>{formatFileSize(file.size)}</span>
+        </div>
       </div>
     </div>
   );

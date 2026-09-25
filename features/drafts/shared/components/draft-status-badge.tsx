@@ -17,7 +17,7 @@ export function DraftStatusBadge({
   const details = STATUS_DETAILS[status];
 
   return (
-    <Badge className={`${details.className} shrink-0`} variant="outline">
+    <Badge className="shrink-0" variant={details.variant}>
       {details.icon}
       {details.label}
     </Badge>
@@ -26,32 +26,35 @@ export function DraftStatusBadge({
 
 const STATUS_DETAILS: Record<
   DisplayDraftStatus,
-  { className: string; icon: React.ReactNode; label: string }
+  {
+    icon: React.ReactNode;
+    label: string;
+    variant: "neutral" | "info" | "success" | "warning" | "destructive";
+  }
 > = {
   editing: {
     label: "Editing",
     icon: <PencilLine aria-hidden="true" />,
-    className: "border-transparent bg-muted text-secondary-foreground",
+    variant: "neutral",
   },
   generating: {
     label: "Generating",
     icon: <LoaderCircle aria-hidden="true" className="animate-spin" />,
-    className:
-      "border-transparent bg-secondary-foreground text-primary-foreground",
+    variant: "info",
   },
   complete: {
     label: "Complete",
     icon: <CircleCheck aria-hidden="true" />,
-    className: "border-foreground bg-card text-foreground",
+    variant: "success",
   },
   attention: {
     label: "Needs attention",
     icon: <TriangleAlert aria-hidden="true" />,
-    className: "border-primary bg-card text-primary",
+    variant: "warning",
   },
   not_found: {
     label: "Not found in Kyron",
     icon: <CircleX aria-hidden="true" />,
-    className: "border-primary bg-card text-primary",
+    variant: "destructive",
   },
 };

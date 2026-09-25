@@ -8,6 +8,8 @@ import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { InlineNotice } from "@/components/ui/inline-notice";
+import { PageHeader } from "@/components/ui/page-header";
 import { createBatch } from "@/features/batches/api";
 import { BatchSourcePicker } from "@/features/batches/components/batch-source-picker";
 import { KyronDestinationField } from "@/features/drafts/workspaces/components/kyron-destination-field";
@@ -58,30 +60,25 @@ export function NewBatchPage() {
 
   return (
     <div className="grid gap-6">
-      <header className="grid gap-4">
-        <Link
-          className="inline-flex w-fit items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
-          href="/batches"
-        >
-          <ArrowLeft aria-hidden="true" className="size-4" />
-          Back to batches
-        </Link>
-        <h1 className="text-[1.8rem] leading-tight font-bold tracking-[-0.025em]">
-          New batch
-        </h1>
-        <p className="max-w-2xl text-sm text-muted-foreground">
-          Select reusable source files. Each file will create one Draft
-          Workspace inside the new batch.
-        </p>
-      </header>
+      <PageHeader
+        description="Select reusable source files. Each file will create one Draft Workspace inside the new batch."
+        eyebrow={
+          <Link
+            className="inline-flex w-fit items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
+            href="/batches"
+          >
+            <ArrowLeft aria-hidden="true" className="size-4" />
+            Back to batches
+          </Link>
+        }
+        title="New batch"
+      />
 
       {error ? (
-        <p className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive" role="alert">
-          {error}
-        </p>
+        <InlineNotice tone="error">{error}</InlineNotice>
       ) : null}
 
-      <section className="overflow-hidden rounded-xl bg-card ring-1 ring-border">
+      <section className="overflow-hidden rounded-xl border border-border/90 bg-card">
         <div className="border-b border-border px-5 py-4">
           <h2 className="text-base font-bold">Set up the batch</h2>
           <p className="mt-1 text-xs text-muted-foreground">
@@ -187,7 +184,7 @@ export function NewBatchPage() {
           <CreationFlow selectedCount={selectedSources.length} />
         </div>
 
-        <footer className="flex flex-col justify-between gap-3 border-t border-border bg-muted/20 px-5 py-4 sm:flex-row sm:items-center">
+        <footer className="flex flex-col justify-between gap-3 border-t border-border bg-surface-subtle px-5 py-4 sm:flex-row sm:items-center">
           <p className="text-xs text-muted-foreground">
             {selectedSources.length} workspace
             {selectedSources.length === 1 ? "" : "s"} will be created. AI

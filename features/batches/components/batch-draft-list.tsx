@@ -325,7 +325,7 @@ export function StatusBadge({ status }: { status: BatchDraftStatus }) {
   const Icon = config.icon;
 
   return (
-    <Badge className={config.className} variant="outline">
+    <Badge variant={config.variant}>
       <Icon
         aria-hidden="true"
         className={config.spin ? "animate-spin" : undefined}
@@ -337,60 +337,60 @@ export function StatusBadge({ status }: { status: BatchDraftStatus }) {
 
 const STATUS_CONFIG = {
   setup_pending: {
-    className: "border-[#C7C9CC] bg-[#F5F5F5] text-[#555B61]",
     icon: FileText,
     label: "Queued",
     spin: false,
+    variant: "neutral",
   },
   setup_generating: {
-    className: "border-[#C7C9CC] bg-[#F5F5F5] text-[#555B61]",
     icon: LoaderCircle,
     label: "Generating setup",
     spin: true,
+    variant: "info",
   },
   setup_error: {
-    className: "border-[#E2A7AF] bg-[#FFF4F5] text-[#A32638]",
     icon: TriangleAlert,
     label: "Setup failed",
     spin: false,
+    variant: "destructive",
   },
   ready: {
-    className: "border-[#9BC7B0] bg-[#F0FAF4] text-[#23653F]",
     icon: CircleCheck,
     label: "Ready",
     spin: false,
+    variant: "success",
   },
   submitting: {
-    className: "border-[#B7ACD9] bg-[#F6F3FF] text-[#59458E]",
     icon: CircleCheck,
     label: "Submitted",
     spin: false,
+    variant: "info",
   },
   generating: {
-    className: "border-[#9DBFD0] bg-[#F0F8FC] text-[#295F79]",
     icon: LoaderCircle,
     label: "Generating in Kyron",
     spin: true,
+    variant: "info",
   },
   complete: {
-    className: "border-[#9BC7B0] bg-[#F0FAF4] text-[#23653F]",
     icon: CircleCheck,
     label: "Complete",
     spin: false,
+    variant: "success",
   },
   kyron_error: {
-    className: "border-[#E2A7AF] bg-[#FFF4F5] text-[#A32638]",
     icon: TriangleAlert,
     label: "Needs attention",
     spin: false,
+    variant: "warning",
   },
 } satisfies Record<
   BatchDraftStatus,
   {
-    className: string;
     icon: typeof CircleCheck;
     label: string;
     spin: boolean;
+    variant: "neutral" | "info" | "success" | "warning" | "destructive";
   }
 >;
 

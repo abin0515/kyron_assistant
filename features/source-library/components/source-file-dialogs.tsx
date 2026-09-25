@@ -54,7 +54,7 @@ export function SourceFileUsageDialog({
       <section
         aria-labelledby="source-usage-title"
         aria-modal="true"
-        className="bg-card max-h-[85vh] w-full max-w-xl overflow-y-auto rounded-xl ring-1 ring-black/10"
+        className="max-h-[85vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-border bg-card shadow-2xl"
         role="dialog"
       >
         <header className="border-border flex items-start justify-between gap-4 border-b px-5 py-4">
@@ -179,7 +179,7 @@ export function DeleteSourceFileDialog({
       <section
         aria-labelledby="delete-source-title"
         aria-modal="true"
-        className="bg-card w-full max-w-md rounded-xl p-5 ring-1 ring-black/10"
+        className="w-full max-w-md rounded-2xl border border-border bg-card p-5 shadow-2xl"
         role="alertdialog"
       >
         <span className="bg-destructive/10 text-destructive grid size-10 place-items-center rounded-lg">
@@ -287,7 +287,7 @@ function UsageStateBadge({ state }: { state: SourceFileUsageState }) {
 
   return (
     <Badge
-      className={active ? undefined : "text-muted-foreground bg-white"}
+      className={active ? undefined : "bg-card text-muted-foreground"}
       variant={active ? "secondary" : "outline"}
     >
       {active ? "Active" : "Previously used"}

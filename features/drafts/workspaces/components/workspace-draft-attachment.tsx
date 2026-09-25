@@ -107,7 +107,7 @@ export function WorkspaceDraftAttachment({
   }
 
   return (
-    <section className="border-border grid gap-3 border-t pt-5 sm:col-span-2">
+    <section className="min-w-0 grid gap-3 sm:col-span-2">
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
         <div className="grid gap-1">
           <p className="text-sm font-semibold">Draft attachment (optional)</p>
@@ -134,7 +134,7 @@ export function WorkspaceDraftAttachment({
       </div>
 
       {attachment ? (
-        <div className="border-border flex items-center gap-3 rounded-xl border bg-white px-4 py-3">
+        <div className="min-w-0 flex items-center gap-3 overflow-hidden rounded-lg border border-border/80 bg-card px-4 py-3">
           <span className="bg-muted grid size-9 shrink-0 place-items-center rounded-lg">
             <FileText aria-hidden="true" className="size-4" />
           </span>
@@ -144,7 +144,7 @@ export function WorkspaceDraftAttachment({
               {attachment.type.toUpperCase()} · {formatFileSize(attachment.size)}
             </p>
           </div>
-          <Badge className="hidden bg-white sm:inline-flex" variant="outline">
+          <Badge className="hidden shrink-0 sm:inline-flex" variant="info">
             Draft attachment
           </Badge>
           {!disabled ? (
@@ -161,7 +161,7 @@ export function WorkspaceDraftAttachment({
           ) : null}
         </div>
       ) : (
-        <div className="border-border bg-background flex items-center gap-3 rounded-xl border border-dashed px-4 py-4">
+        <div className="flex items-center gap-3 rounded-lg border border-dashed border-border bg-muted/20 px-4 py-4">
           <Paperclip
             aria-hidden="true"
             className="text-muted-foreground size-5 shrink-0"

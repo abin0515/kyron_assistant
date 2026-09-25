@@ -100,7 +100,7 @@ export function DeleteWorkspaceButton({
         </Button>
       </div>
       {errorMessage ? (
-        <p className="max-w-64 text-right text-xs text-primary" role="alert">
+        <p className="max-w-64 text-right text-xs text-destructive" role="alert">
           {errorMessage}
         </p>
       ) : (
