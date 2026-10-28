@@ -1,0 +1,727 @@
+openapi: 3.1.0
+info:
+  title: Kyron Learning Public API
+  version: '2.0' # quoted so YAML doesn't coerce it to the float 2.0
+  description: |
+    Kyron Learning's public API. All endpoints authenticate via API key supplied
+    in an `Authorization: Bearer <token>` header. Requests are scoped to the
+    organization the API key belongs to.
+
+servers:
+  - url: https://app.kyronlearning.com/api/v2
+    description: Production
+
+components:
+  securitySchemes:
+    apiKey:
+      type: http
+      scheme: bearer
+      description: API key issued from the organization settings page.
+
+  parameters:
+    Page:
+      name: page
+      in: query
+      required: false
+      description: The page number to return. Defaults to 1.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+        default: 1
+    PerPage:
+      name: per_page
+      in: query
+      required: false
+      description: The number of results per page. Clamped to between 1 and 50. Defaults to 50.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+        maximum: 50
+        default: 50
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid API key.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    LessonCollection:
+      type: object
+      required:
+        [
+          id,
+          slug,
+          name,
+          description,
+          published_at,
+          created_at,
+          updated_at,
+          preview_url,
+          editor_url,
+          status,
+          status_message,
+        ]
+      properties:
+        id:
+          type: integer
+          format: int64
+        slug:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        published_at:
+          type: [string, 'null']
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        preview_url:
+          type: string
+          format: uri
+          description: Link to manually preview the draft lesson.
+        editor_url:
+          type: string
+          format: uri
+          description: Link to manually edit the draft lesson.
+        status:
+          type: string
+          enum: [started, error, done]
+          description: Status of async work happening on the lesson collection.
+        status_message:
+          type: string
+          description: Status message of async work.
+    AssetFolder:
+      type: object
+      required: [id, name, parent_id, created_at, updated_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        parent_id:
+          type: [integer, 'null']
+          format: int64
+          description: >-
+            The folder this folder is nested under. Every organization has a root folder with a null parent_id.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    PaginationMeta:
+      type: object
+      required: [current_page, next_page, prev_page, total_pages, total_count]
+      properties:
+        current_page:
+          type: integer
+          format: int64
+        next_page:
+          type: [integer, 'null']
+          format: int64
+        prev_page:
+          type: [integer, 'null']
+          format: int64
+        total_pages:
+          type: integer
+          format: int64
+        total_count:
+          type: integer
+          format: int64
+    Error:
+      type: object
+      required: [title, status]
+      properties:
+        title:
+          type: string
+        status:
+          type: integer
+        errors:
+          type: array
+          items:
+            type: object
+            required: [message]
+            properties:
+              message:
+                type: string
+              pointer:
+                type: string
+              code:
+                type: string
+
+security:
+  - apiKey: []
+
+tags:
+  - name: organizations
+  - name: lesson_collections
+  - name: asset_folders
+  - name: files
+
+paths:
+  /files:
+    post:
+      tags: [files]
+      operationId: createFile
+      summary: Request a pre-signed URL to upload a file. Required when trying to pass data in any signed_id field.
+      description: |
+        Returns a `signed_id` and a pre-signed `direct_upload` URL. Upload the file by issuing an HTTP PUT to that URL
+        sending exactly the headers in `direct_upload.headers` (and no others), then submit the `signed_id` where a
+        file is accepted (e.g. as `alignment_content_signed_id` when creating a lesson collection).
+
+        Example (note `-H "Content-Type:"` to suppress curl's default, which would otherwise break the signature):
+
+        ```
+        curl -X PUT "$url" -H "Content-Type:" -H "Content-MD5: <checksum>" \
+          -H "Content-Disposition: <disposition>" --data-binary @file.pdf
+        ```
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [blob]
+              properties:
+                blob:
+                  type: object
+                  required: [filename, byte_size, checksum, content_type]
+                  properties:
+                    filename:
+                      type: string
+                      description: The name of the file being uploaded.
+                    byte_size:
+                      type: integer
+                      format: int64
+                      description: The size of the file in bytes (e.g. `wc -c < file.pdf`).
+                    checksum:
+                      type: string
+                      description: >-
+                        Base64-encoded MD5 digest of the file (e.g. `openssl dgst -md5 -binary file.pdf | base64`).
+                    content_type:
+                      type: string
+                      description: The MIME type of the file (e.g. application/pdf).
+      responses:
+        '201':
+          description: The created upload placeholder and pre-signed upload target.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [signed_id, direct_upload]
+                properties:
+                  signed_id:
+                    type: string
+                    description: Reference to the upload. Use this in a future API call after uploading the file.
+                  direct_upload:
+                    type: object
+                    required: [url, headers]
+                    properties:
+                      url:
+                        type: string
+                        format: uri
+                        description: Pre-signed URL to PUT the file bytes to.
+                      headers:
+                        type: object
+                        additionalProperties:
+                          type: string
+                        description: Headers that must be sent with the PUT request.
+        '400':
+          description: The request body is missing required fields or is otherwise invalid.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /organizations/current:
+    get:
+      tags: [organizations]
+      operationId: getCurrentOrganization
+      summary: Return information about the authenticated API key's organization.
+      responses:
+        '200':
+          description: Authenticated organization context.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [organization]
+                properties:
+                  organization:
+                    type: object
+                    required: [id, name]
+                    properties:
+                      id:
+                        type: integer
+                        format: int64
+                      name:
+                        type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /asset_folders:
+    get:
+      tags: [asset_folders]
+      operationId: listAssetFolders
+      summary: List the folders inside another folder.
+      parameters:
+        - name: parent_id
+          in: query
+          required: false
+          description: >-
+            Only return folders directly inside this folder. Defaults to the top level of the organization's library.
+          schema:
+            type: integer
+            format: int64
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: The folders inside the requested folder.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [asset_folders, meta]
+                properties:
+                  asset_folders:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AssetFolder'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No folder with that parent_id exists or this API key can't access it.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      tags: [asset_folders]
+      operationId: createAssetFolder
+      summary: Create a folder.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  description: The folder's name. Must be unique among the folders with the same parent.
+                parent_id:
+                  type: integer
+                  format: int64
+                  description: >-
+                    Optional. The folder to create this folder inside of. Defaults to the organization's root folder.
+      responses:
+        '201':
+          description: The newly created folder.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [asset_folder]
+                properties:
+                  asset_folder:
+                    $ref: '#/components/schemas/AssetFolder'
+        '400':
+          description: The request body is missing required fields or is otherwise invalid.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No folder with that parent_id exists or this API key can't create folders in it.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: The folder could not be created, e.g. the name is already taken by a sibling folder.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /asset_folders/{id}:
+    get:
+      tags: [asset_folders]
+      operationId: getAssetFolder
+      summary: Return a folder with the folders and lesson collections directly inside it.
+      description: >-
+        Folders and lesson collections are paginated together and returned in separate keys. `asset_folder` describes
+        the requested folder itself and does not change across pages.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The folder's ID.
+          schema:
+            type: integer
+            format: int64
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: The requested folder and the children directly inside it.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [asset_folder, asset_folders, lesson_collections, meta]
+                properties:
+                  asset_folder:
+                    $ref: '#/components/schemas/AssetFolder'
+                  asset_folders:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AssetFolder'
+                  lesson_collections:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/LessonCollection'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No folder with that ID exists or this API key can't access it.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    patch:
+      tags: [asset_folders]
+      operationId: updateAssetFolder
+      summary: Rename the folder or move it into a different folder.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The folder's ID.
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: The folder's new name.
+                parent_id:
+                  type: integer
+                  format: int64
+                  description: The folder to move this folder into.
+      responses:
+        '200':
+          description: The updated folder.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [asset_folder]
+                properties:
+                  asset_folder:
+                    $ref: '#/components/schemas/AssetFolder'
+        '400':
+          description: The request body is invalid.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No folder with that ID exists or this API key can't access it.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: The folder could not be updated.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      tags: [asset_folders]
+      operationId: deleteAssetFolder
+      summary: Delete the folder with the given ID. Only empty folders can be deleted.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The folder's ID.
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: The folder was deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message]
+                properties:
+                  message:
+                    type: string
+                    description: A confirmation message.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No folder with that ID exists or this API key can't access it.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: >-
+            The folder could not be deleted because it still has contents or is the organization's library folder.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /lesson_collections:
+    get:
+      tags: [lesson_collections]
+      operationId: listLessonCollections
+      summary: List the lesson collections in this organization.
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: The organization's lesson collections.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [lesson_collections, meta]
+                properties:
+                  lesson_collections:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/LessonCollection'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [lesson_collections]
+      operationId: createLessonCollection
+      summary: Start creating a lesson collection. Creation is async and takes about 10 minutes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, description, learning_objective, audience, duration]
+              properties:
+                name:
+                  type: string
+                  description: The lesson's name.
+                description:
+                  type: string
+                  description: A short description of the lesson collection.
+                lesson_type:
+                  type: string
+                  enum: [lesson, practice, scenario]
+                  default: lesson
+                  description: >-
+                    Optional. The kind of learning asset to generate. Defaults to "lesson".
+
+                    - "lesson": an engaging lesson that balances direct instruction with guided conversations.
+
+                    - "practice": a series of multiple choice questions and conversation activities to help learners
+                    practice what they're learning. Great if you already have learning content and want to supplement
+                    it.
+
+                    - "scenario": a scenario-based experience that allows learners to apply knowledge in realistic,
+                    context-rich situations. This standalone activity uses active engagement and real-world challenges
+                    to deepen understanding, build critical thinking skills, and support meaningful learning.
+                learning_objective:
+                  type: string
+                  description: What the lesson should teach.
+                audience:
+                  type: string
+                  description: Who the lesson is for.
+                duration:
+                  type: integer
+                  enum: [480, 900, 1800, 3600]
+                  description: Intended lesson length in seconds. Must be one of 480, 900, 1800, or 3600.
+                asset_folder_id:
+                  type: integer
+                  format: int64
+                  description: >-
+                    Optional. The folder to create the lesson collection in. Defaults to the top level of the
+                    organization's library.
+                alignment_content_signed_id:
+                  type: string
+                  description: >-
+                    Optional. The signed ID returned by the createFile endpoint after uploading instructional material.
+                    Material should be a PDF or PPTX file and no larger than 250 MB. When supplied, the generated lesson
+                    will more closely match the key concepts, reasoning patterns, and common misconceptions from the
+                    source material.
+      responses:
+        '201':
+          description: The newly created lesson collection. Content generation runs asynchronously.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [lesson_collection]
+                properties:
+                  lesson_collection:
+                    $ref: '#/components/schemas/LessonCollection'
+        '400':
+          description: The request body is missing required fields or is otherwise invalid.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No folder with that asset_folder_id exists or this API key can't access it.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /lesson_collections/{id}:
+    get:
+      tags: [lesson_collections]
+      operationId: getLessonCollection
+      summary: Return the lesson collection with the given ID.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The lesson collection's ID.
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: The requested lesson collection.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [lesson_collection]
+                properties:
+                  lesson_collection:
+                    $ref: '#/components/schemas/LessonCollection'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No lesson collection with that ID exists or this API key can't access it.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      tags: [lesson_collections]
+      operationId: deleteLessonCollection
+      summary: Delete the lesson collection with the given ID.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The lesson collection's ID.
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: The lesson collection was deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message]
+                properties:
+                  message:
+                    type: string
+                    description: A confirmation message.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No lesson collection with that ID exists or this API key can't access it.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /lesson_collections/{id}/publish:
+    post:
+      tags: [lesson_collections]
+      operationId: publishLessonCollection
+      summary: Publish the lesson collection with the given ID. Publishing is async.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The lesson collection's ID.
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: >-
+            Publishing has started. Content is published asynchronously. Returns the lesson collection.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [lesson_collection]
+                properties:
+                  lesson_collection:
+                    $ref: '#/components/schemas/LessonCollection'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No lesson collection with that ID exists or this API key can't access it.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: A publish is already in progress for this lesson collection.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: The lesson collection cannot be published.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'

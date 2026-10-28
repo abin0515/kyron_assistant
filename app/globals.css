@@ -1,0 +1,140 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  --color-cpe-red: #a32638;
+  --color-cpe-black: #000000;
+  --color-cpe-dark-gray: #363d45;
+  --color-cpe-gray: #7f7f7f;
+  --color-cpe-light-gray: #e4e5e6;
+  --color-cpe-white: #ffffff;
+}
+
+@theme inline {
+  --font-sans: var(--font-cpe-body);
+  --font-heading: var(--font-cpe-heading);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-surface-subtle: var(--surface-subtle);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  --background: #f6f6f5;
+  --foreground: var(--color-cpe-black);
+  --card: var(--color-cpe-white);
+  --card-foreground: var(--color-cpe-black);
+  --popover: var(--color-cpe-white);
+  --popover-foreground: var(--color-cpe-black);
+  --primary: var(--color-cpe-red);
+  --primary-foreground: var(--color-cpe-white);
+  --secondary: var(--color-cpe-white);
+  --secondary-foreground: var(--color-cpe-dark-gray);
+  --muted: #eff0f0;
+  --muted-foreground: #687078;
+  --accent: #f2e9eb;
+  --accent-foreground: var(--color-cpe-black);
+  --destructive: #b42335;
+  --destructive-foreground: #ffffff;
+  --warning: #9a6412;
+  --warning-foreground: #5f3d08;
+  --success: #287a51;
+  --success-foreground: #175236;
+  --info: #3e718a;
+  --info-foreground: #28556b;
+  --surface-subtle: #fafafa;
+  --border: #dedfdf;
+  --input: #d7d9da;
+  --ring: var(--color-cpe-red);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --radius: 0.625rem;
+  --sidebar: var(--color-cpe-white);
+  --sidebar-foreground: var(--color-cpe-black);
+  --sidebar-primary: var(--color-cpe-red);
+  --sidebar-primary-foreground: var(--color-cpe-white);
+  --sidebar-accent: var(--color-cpe-light-gray);
+  --sidebar-accent-foreground: var(--color-cpe-black);
+  --sidebar-border: var(--color-cpe-light-gray);
+  --sidebar-ring: var(--color-cpe-red);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+  button,
+  a,
+  input,
+  textarea,
+  select,
+  summary {
+    @apply transition-colors duration-150;
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--primary) 20%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
