@@ -26,6 +26,8 @@ import type {
 import { uploadWorkspaceAttachmentToKyron } from "@/server/drafts/workspace-source-files/kyron-attachment";
 import { createDraftWithRequiredPersistence } from "@/server/drafts/kyron-drafts/service";
 import { getCurrentUser } from "@/server/identity/current-user";
+import { assertSetupReadyForSubmission } from "@/server/qa/service";
+import { logEvent } from "@/server/logging/writer";
 import { KyronClientError } from "@/server/kyron/client";
 import type {
   CreateDraftRequest,
@@ -116,6 +118,7 @@ export async function listCurrentUserDraftWorkspaces(
 export async function submitCurrentUserDraftWorkspace(
   id: string,
   includeInCalibration = false,
+  qaOverride = false,
 ): Promise<DraftWorkspace | null> {
   const user = await getCurrentUser();
   const workspace = await getDraftWorkspaceById(id, user.id);
@@ -129,6 +132,9 @@ export async function submitCurrentUserDraftWorkspace(
   }
 
   assertWorkspaceCanBeSubmitted(workspace);
+  // Kyron generation starts only from a course setup that passed its quality
+  // check (fixes it applies are read back by startDraftWorkspaceSubmission).
+  await assertSetupReadyForSubmission({ override: qaOverride, user, workspace });
 
   const submittingWorkspace = await startDraftWorkspaceSubmission(
     id,
@@ -147,6 +153,16 @@ export async function submitCurrentUserDraftWorkspace(
       alignmentContentSignedId,
     );
     const draft = await createDraftWithRequiredPersistence(draftRequest);
+
+    await logEvent({
+      category: "draft",
+      event: "draft.submitted",
+      message: `Created Kyron draft ${draft.id} for "${draftRequest.name}".`,
+      actorId: user.id,
+      actorRole: user.role,
+      workspaceId: id,
+      kyronDraftId: draft.id,
+    });
     const completed = await completeWorkspaceSubmissionWithCalibration(
       id,
       user.id,

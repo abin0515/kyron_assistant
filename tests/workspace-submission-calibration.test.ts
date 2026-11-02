@@ -28,6 +28,10 @@ vi.mock("@/server/drafts/kyron-drafts/service", () => ({
 vi.mock("@/server/identity/current-user", () => ({
   getCurrentUser: vi.fn(),
 }));
+vi.mock("@/server/qa/service", () => ({
+  assertSetupReadyForSubmission: vi.fn(async () => undefined),
+}));
+vi.mock("@/server/logging/writer", () => ({ logEvent: vi.fn() }));
 
 import {
   completeWorkspaceSubmissionWithCalibration,
@@ -46,12 +50,14 @@ import {
 } from "@/server/drafts/workspaces/service";
 import { getCurrentUser } from "@/server/identity/current-user";
 import { KyronClientError } from "@/server/kyron/client";
+import { assertSetupReadyForSubmission } from "@/server/qa/service";
 import type { Draft, DraftWorkspace } from "@/types/api";
 
 const user = {
   id: "user_123",
   name: "Tasha Reviewer",
   email: "tasha@example.com",
+  role: "user" as const,
 };
 const workspace: DraftWorkspace = {
   id: "04bb97aa-47ae-4a87-a1eb-53ac43c3fba1",
@@ -109,6 +115,10 @@ describe("workspace submission calibration", () => {
 
   it("keeps manual workspace submission working", async () => {
     await submitCurrentUserDraftWorkspace(workspace.id);
+
+    expect(assertSetupReadyForSubmission).toHaveBeenCalledWith(
+      expect.objectContaining({ override: false }),
+    );
 
     expect(startDraftWorkspaceSubmission).toHaveBeenCalled();
     expect(createDraftWithRequiredPersistence).toHaveBeenCalled();

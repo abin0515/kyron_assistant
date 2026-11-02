@@ -20,6 +20,7 @@ import {
   KyronClientError,
 } from "@/server/kyron/client";
 import { toDraft } from "@/server/kyron/normalize";
+import { queueQaForCompletedDraft } from "@/server/qa/service";
 import type {
   CreateDraftRequest,
   Draft,
@@ -43,6 +44,10 @@ export async function syncDraft(id: number): Promise<Draft> {
     const draft = toDraft(collection);
 
     await persistDraft(draft);
+
+    if (draft.status === "done") {
+      await notifyQaOfCompletedDraft(draft);
+    }
 
     return draft;
   } catch (error) {
@@ -155,6 +160,17 @@ async function persistDraft(draft: Draft): Promise<void> {
       operation: "synchronization",
       message:
         error instanceof Error ? error.message : "Unknown database error",
+    });
+  }
+}
+
+async function notifyQaOfCompletedDraft(draft: Draft): Promise<void> {
+  try {
+    await queueQaForCompletedDraft(draft);
+  } catch (error) {
+    console.error("QA queueing for a completed draft failed.", {
+      draftId: draft.id,
+      message: error instanceof Error ? error.message : "Unknown QA error",
     });
   }
 }

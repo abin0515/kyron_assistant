@@ -27,6 +27,8 @@ type WorkspaceStatusPanelProps = {
   onCheckNow: () => void;
   onDeleted: () => void;
   onSubmit: () => void;
+  // Shown when the quality check blocked submission; submits with an override.
+  onSubmitAnyway?: () => void;
   pollingState: DraftPollingState;
   ready: boolean;
   submissionBusy: boolean;
@@ -41,6 +43,7 @@ export function WorkspaceStatusPanel({
   onCheckNow,
   onDeleted,
   onSubmit,
+  onSubmitAnyway,
   pollingState,
   ready,
   submissionBusy,
@@ -90,6 +93,18 @@ export function WorkspaceStatusPanel({
           </p>
         ) : null}
 
+        {onSubmitAnyway ? (
+          <Button
+            className="w-full"
+            disabled={submissionBusy}
+            onClick={onSubmitAnyway}
+            type="button"
+            variant="outline"
+          >
+            Submit anyway
+          </Button>
+        ) : null}
+
         {workspace.courseSetupCalibration ? (
           <label className="flex cursor-pointer items-start gap-3 rounded-lg bg-muted/45 p-3">
             <input
@@ -122,7 +137,7 @@ export function WorkspaceStatusPanel({
           {submissionBusy ? (
             <>
               <LoaderCircle aria-hidden="true" className="animate-spin" />
-              Creating draft…
+              Checking and creating draft…
             </>
           ) : (
             "Create course draft"

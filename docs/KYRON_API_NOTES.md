@@ -119,6 +119,28 @@ Draft, Source Library, and Batch management endpoints are paginated. Draft
 synchronization is bounded separately from the displayed page so active or
 stale records are not skipped simply because they are not currently visible.
 
+## Kyron MCP — reviewed October 30, 2026
+
+Kyron's documented MCP server (`https://www.kyronlearning.com/mcp`) is the
+supported route to lesson content beyond the public API. It is not one of the
+undocumented `/api/v1` endpoints, so the launcher may use it.
+
+- Authentication is OAuth 2.1 authorization code with PKCE (S256) and refresh
+  tokens. There is no API-key or service-account grant, so a Kyron user signs
+  in once and the app refreshes the tokens.
+- Kyron registers clients through OAuth Client ID Metadata Documents (CIMD).
+  The client ID is the HTTPS URL of a public JSON file; there is no dynamic
+  registration endpoint. Public clients (`token_endpoint_auth_method: none`)
+  are accepted.
+- Scopes are `read`, `write`, and `claudeai`. The launcher requests `read`
+  until automated repairs are approved.
+- `resource_indicators_supported` is `false`, so authorization requests omit
+  the `resource` parameter.
+- The tool list is visible only after sign-in. Kyron's help article
+  ("Connecting to Kyron: API vs. MCP") describes setup, not tools. The admin
+  **Kyron connection** page lists them and can download a dated capability
+  manifest.
+
 ## API gaps for future workflow
 
 The current public API document still does not provide operations to:

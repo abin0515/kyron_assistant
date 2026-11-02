@@ -12,6 +12,7 @@ import {
 import { generateCourseSetupWithMetadata } from "@/server/drafts/course-setup/service";
 import { getDraftWorkspaceById } from "@/server/drafts/workspaces/repository";
 import { getCurrentUser } from "@/server/identity/current-user";
+import { runSetupQaAfterGeneration } from "@/server/qa/service";
 import type { DraftWorkspace } from "@/types/api";
 
 export async function generateCurrentUserWorkspaceCourseSetup(input: {
@@ -57,6 +58,8 @@ export async function generateCurrentUserWorkspaceCourseSetup(input: {
         "The workspace changed while the course setup was being generated. Try again.",
       );
     }
+
+    await runSetupQaSafely(input.workspaceId, user.id, user.name);
 
     const workspace = await getDraftWorkspaceById(input.workspaceId, user.id);
 
@@ -157,4 +160,22 @@ function generationClaimError(
   return new CourseSetupCalibrationConflictError(
     "A submitted or locked workspace cannot regenerate its course setup.",
   );
+}
+
+// The quality check is part of generation: it reviews the new setup against
+// the workspace sources and applies safe fixes before the editor shows it.
+// A QA failure never fails the generation itself.
+async function runSetupQaSafely(
+  workspaceId: string,
+  ownerId: string,
+  startedBy: string,
+): Promise<void> {
+  try {
+    await runSetupQaAfterGeneration({ workspaceId, ownerId, startedBy });
+  } catch (error) {
+    console.error("Course setup quality check could not run.", {
+      workspaceId,
+      errorName: error instanceof Error ? error.name : "UnknownError",
+    });
+  }
 }

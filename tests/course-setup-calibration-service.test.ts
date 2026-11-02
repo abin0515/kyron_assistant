@@ -40,6 +40,7 @@ const user = {
   id: "user_123",
   name: "Tasha Reviewer",
   email: "tasha@example.com",
+  role: "user" as const,
 };
 const setup: CourseSetup = {
   name: "Project Planning",

@@ -23,6 +23,7 @@ import {
   submitDraftWorkspace,
   updateWorkspaceKyronDestination,
 } from "@/features/drafts/workspaces/api";
+import { WorkspaceQaPanel } from "@/features/qa/components/workspace-qa-panel";
 import { courseSetupsMatch } from "@/lib/course-setup";
 import type { DraftWorkspace, KyronDestination } from "@/types/api";
 
@@ -36,6 +37,8 @@ export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
   const [loading, setLoading] = useState(true);
   const [submissionBusy, setSubmissionBusy] = useState(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
+  const [qaBlocked, setQaBlocked] = useState(false);
+  const [qaRefreshKey, setQaRefreshKey] = useState(0);
   const [workspace, setWorkspace] = useState<DraftWorkspace | null>(null);
 
   const handleSaved = useCallback((savedWorkspace: DraftWorkspace) => {
@@ -44,6 +47,19 @@ export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
   const autosave = useWorkspaceAutosave(handleSaved);
   const generator = useCourseSetupGenerator();
   const polling = useDraftPolling(workspace?.kyronDraftId ?? null);
+  const autosavePhase = autosave.state.phase;
+
+  // The quality check may fix setup fields on the server; reload them so the
+  // next autosave does not overwrite the fixes. Unsaved edits take priority.
+  const refreshAfterQa = useCallback(() => {
+    if (autosavePhase === "pending" || autosavePhase === "saving") {
+      return;
+    }
+
+    void getDraftWorkspace(workspaceId)
+      .then((freshWorkspace) => setWorkspace(freshWorkspace))
+      .catch(() => undefined);
+  }, [autosavePhase, workspaceId]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -82,6 +98,7 @@ export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
   function handleWorkspaceChange(nextWorkspace: DraftWorkspace) {
     setFieldErrors({});
     setSubmissionError(null);
+    setQaBlocked(false);
     setIncludeInCalibration(false);
     setWorkspace(nextWorkspace);
     autosave.queueSave(nextWorkspace);
@@ -151,13 +168,14 @@ export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
       if (generatedWorkspace) {
         setWorkspace(generatedWorkspace);
         setIncludeInCalibration(false);
+        setQaRefreshKey((key) => key + 1);
       }
     } catch {
       // Autosave exposes its own actionable error state.
     }
   }
 
-  async function handleSubmit() {
+  async function handleSubmit(qaOverride = false) {
     if (!workspace || submissionBusy) {
       return;
     }
@@ -168,6 +186,7 @@ export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
     setFieldErrors({});
     setSubmissionBusy(true);
     setSubmissionError(null);
+    setQaBlocked(false);
 
     try {
       const savedWorkspace = await autosave.saveNow(workspace);
@@ -175,14 +194,22 @@ export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
         savedWorkspace.id,
         includeInCalibration,
         controller.signal,
+        qaOverride,
       );
 
       if (!controller.signal.aborted) {
         setWorkspace(submittedWorkspace);
+        setQaRefreshKey((key) => key + 1);
       }
     } catch (error) {
       if (!controller.signal.aborted) {
         setSubmissionError(messageFromError(error));
+
+        if (error instanceof DraftApiError && error.code?.startsWith("QA_")) {
+          setQaBlocked(error.code === "QA_BLOCKED");
+          setQaRefreshKey((key) => key + 1);
+          refreshAfterQa();
+        }
 
         if (error instanceof DraftApiError && error.fieldErrors) {
           setFieldErrors(error.fieldErrors);
@@ -261,6 +288,11 @@ export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
             onChange={handleWorkspaceChange}
             workspace={workspace}
           />
+          <WorkspaceQaPanel
+            onSetupSettled={refreshAfterQa}
+            refreshKey={qaRefreshKey}
+            workspace={workspace}
+          />
         </div>
 
         <WorkspaceStatusPanel
@@ -273,6 +305,7 @@ export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
             router.refresh();
           }}
           onSubmit={() => void handleSubmit()}
+          onSubmitAnyway={qaBlocked ? () => void handleSubmit(true) : undefined}
           pollingState={polling.state}
           ready={ready}
           submissionBusy={submissionBusy}

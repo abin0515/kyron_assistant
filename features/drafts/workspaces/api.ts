@@ -189,9 +189,11 @@ export async function submitDraftWorkspace(
   id: string,
   includeInCalibration: boolean,
   signal?: AbortSignal,
+  qaOverride = false,
 ): Promise<DraftWorkspace> {
   const body = {
     includeInCalibration,
+    qaOverride,
   } satisfies SubmitDraftWorkspaceRequest;
   const response = await fetch(`/api/draft-workspaces/${id}/submit`, {
     method: "POST",

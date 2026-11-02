@@ -17,7 +17,11 @@ import {
 } from "@/server/http/api-response";
 import { KyronClientError } from "@/server/kyron/client";
 import { KyronAttachmentTransferError } from "@/server/drafts/workspace-source-files/kyron-attachment";
-import type { SubmitDraftWorkspaceRequest } from "@/types/api";
+import { QaSubmissionGateError } from "@/server/qa/service";
+import type {
+  ApiErrorResponse,
+  SubmitDraftWorkspaceRequest,
+} from "@/types/api";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -53,6 +57,7 @@ export async function POST(
     const workspace = await submitCurrentUserDraftWorkspace(
       id,
       parsedRequest.data.includeInCalibration,
+      parsedRequest.data.qaOverride ?? false,
     );
 
     if (!workspace) {
@@ -103,10 +108,20 @@ async function readSubmitRequest(request: NextRequest): Promise<{
     };
   }
 
-  return { data: { includeInCalibration } };
+  const qaOverride = (value as Record<string, unknown>).qaOverride;
+
+  if (qaOverride !== undefined && typeof qaOverride !== "boolean") {
+    return { errors: { qaOverride: ["qaOverride must be a boolean."] } };
+  }
+
+  return { data: { includeInCalibration, qaOverride: qaOverride === true } };
 }
 
 function submissionErrorResponse(error: unknown) {
+  if (error instanceof QaSubmissionGateError) {
+    return qaGateErrorResponse(error);
+  }
+
   if (error instanceof DraftWorkspaceDestinationError) {
     return conflictErrorResponse(error.message, false);
   }
@@ -163,4 +178,19 @@ function hasSameOrigin(request: NextRequest): boolean {
   } catch {
     return false;
   }
+}
+
+function qaGateErrorResponse(error: QaSubmissionGateError) {
+  const response = {
+    error: {
+      code: error.reason === "checking" ? "QA_CHECKING" : "QA_BLOCKED",
+      message: error.message,
+      retryable: error.reason === "checking",
+    },
+  } satisfies ApiErrorResponse;
+
+  return NextResponse.json(response, {
+    status: 409,
+    headers: noStoreHeaders,
+  });
 }

@@ -23,6 +23,7 @@ import {
   setBatchCourseSetupCalibrationSelection,
 } from "@/server/drafts/course-setup-calibrations/repository";
 import { generateCourseSetupWithMetadata } from "@/server/drafts/course-setup/service";
+import { runSetupQaAfterGeneration } from "@/server/qa/service";
 import { updateCurrentWorkspaceSourceFiles } from "@/server/drafts/workspace-source-files/service";
 import { updateDraftWorkspace } from "@/server/drafts/workspaces/repository";
 import { getCurrentUser } from "@/server/identity/current-user";
@@ -36,6 +37,9 @@ import type {
 
 const MAX_BATCH_WORKSPACES = 20;
 const GENERATION_CONCURRENCY = 2;
+// Each batch workspace drives its own quality check for at most this long;
+// anything left continues in the worker.
+const BATCH_QA_BUDGET_MS = 60_000;
 
 export async function createCurrentUserBatch(
   name: string,
@@ -168,6 +172,8 @@ export async function generateCurrentUserBatchSetups(
           "The workspace changed while the course setup was being generated.",
         );
       }
+
+      await runSetupQaSafely(workspace.id, user.id, user.name);
     } catch (error) {
       await failBatchCourseSetupGeneration(
         batchId,
@@ -292,4 +298,24 @@ function errorMessage(error: unknown): string {
   return error instanceof Error
     ? error.message
     : "The course setup could not be generated.";
+}
+
+async function runSetupQaSafely(
+  workspaceId: string,
+  ownerId: string,
+  startedBy: string,
+): Promise<void> {
+  try {
+    await runSetupQaAfterGeneration({
+      workspaceId,
+      ownerId,
+      startedBy,
+      budgetMs: BATCH_QA_BUDGET_MS,
+    });
+  } catch (error) {
+    console.error("Batch course setup quality check could not run.", {
+      workspaceId,
+      errorName: error instanceof Error ? error.name : "UnknownError",
+    });
+  }
 }

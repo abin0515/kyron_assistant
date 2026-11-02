@@ -4,7 +4,13 @@ import { randomUUID } from "node:crypto";
 
 import { NextResponse } from "next/server";
 
+import {
+  AuthenticationRequiredError,
+  ForbiddenError,
+} from "@/server/identity/current-user";
 import { KyronClientError } from "@/server/kyron/client";
+import { KyronMcpError } from "@/server/kyron-mcp/errors";
+import { logEvent } from "@/server/logging/writer";
 import {
   type ApiErrorCode,
   type ApiErrorResponse,
@@ -138,6 +144,14 @@ export function internalErrorResponse(
     code: "INTERNAL_ERROR",
     errorName: error instanceof Error ? error.name : "UnknownError",
   });
+  void logEvent({
+    category: "system",
+    event: "api.internal_error",
+    level: "error",
+    message: `${context}: ${error instanceof Error ? error.message : "unknown error"}`,
+    requestId,
+    data: { errorName: error instanceof Error ? error.name : "UnknownError" },
+  });
 
   const response = {
     error: {
@@ -197,6 +211,106 @@ export function kyronErrorResponse(
 
   return NextResponse.json(response, {
     status: statusForKyronError(normalized.code),
+    headers: noStoreHeaders,
+  });
+}
+
+export function unauthorizedErrorResponse(message = "Sign in to continue.") {
+  return simpleErrorResponse("UNAUTHORIZED", message, 401);
+}
+
+export function forbiddenErrorResponse(
+  message = "Your role does not allow this action.",
+) {
+  return simpleErrorResponse("FORBIDDEN", message, 403);
+}
+
+export function rateLimitedErrorResponse(
+  message: string,
+  retryAfterSeconds: number,
+) {
+  const response = simpleErrorResponse("RATE_LIMITED", message, 429, true);
+  response.headers.set("Retry-After", String(retryAfterSeconds));
+
+  return response;
+}
+
+export function identityErrorResponse(error: unknown) {
+  if (error instanceof AuthenticationRequiredError) {
+    return unauthorizedErrorResponse();
+  }
+
+  if (error instanceof ForbiddenError) {
+    return forbiddenErrorResponse(error.message);
+  }
+
+  return null;
+}
+
+export function kyronMcpErrorResponse(
+  error: unknown,
+  {
+    context,
+    fallbackMessage,
+  }: {
+    context: string;
+    fallbackMessage: string;
+  },
+) {
+  const identityResponse = identityErrorResponse(error);
+
+  if (identityResponse) {
+    return identityResponse;
+  }
+
+  if (!(error instanceof KyronMcpError)) {
+    return internalErrorResponse(error, {
+      context,
+      fallbackMessage,
+      retryable: true,
+    });
+  }
+
+  console.error(context, { code: error.code });
+
+  return simpleErrorResponse(
+    error.code,
+    error.message,
+    statusForKyronMcpError(error.code),
+    error.retryable,
+  );
+}
+
+function statusForKyronMcpError(code: KyronMcpError["code"]): number {
+  switch (code) {
+    case "KYRON_MCP_NOT_CONFIGURED":
+    case "KYRON_MCP_NOT_CONNECTED":
+      return 409;
+    case "KYRON_MCP_TOOL_NOT_ALLOWED":
+      return 403;
+    case "KYRON_INVALID_RESPONSE":
+      return 502;
+    default:
+      return 503;
+  }
+}
+
+function simpleErrorResponse(
+  code: ApiErrorCode,
+  message: string,
+  status: number,
+  retryable = false,
+) {
+  const response = {
+    error: {
+      code,
+      message,
+      retryable,
+    },
+  } satisfies ApiErrorResponse;
+
+  return NextResponse.json(response, {
+    status,
     headers: noStoreHeaders,
   });
 }

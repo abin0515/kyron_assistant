@@ -1,8 +1,13 @@
 import "server-only";
 
 import { getServerEnv } from "@/server/env";
+import { logEvent } from "@/server/logging/writer";
 
-import { createKyronClient, KyronClientError } from "./client-core";
+import {
+  createKyronClient,
+  KyronClientError,
+  type KyronRequestReport,
+} from "./client-core";
 
 export async function getCurrentKyronOrganization() {
   return getKyronClient().getCurrentOrganization();
@@ -38,7 +43,28 @@ function getKyronClient() {
   return createKyronClient({
     apiKey: environment.KYRON_API_KEY,
     baseUrl: environment.KYRON_API_BASE_URL,
+    onRequestComplete: logKyronRequest,
   });
+}
+
+function logKyronRequest(report: KyronRequestReport): void {
+  const pathPattern = report.path.replace(/\/\d+(?=\/|$)/g, "/{id}");
+
+  void logEvent({
+    category: "kyron_api",
+    event: "kyron.request",
+    level: report.errorCode ? "warn" : "info",
+    message: `${report.method} ${pathPattern} → ${report.status ?? report.errorCode}`,
+    durationMs: report.durationMs,
+    kyronDraftId: kyronIdFromPath(report.path),
+    data: { status: report.status, errorCode: report.errorCode },
+  });
+}
+
+function kyronIdFromPath(path: string): number | null {
+  const match = path.match(/^\/lesson_collections\/(\d+)/);
+
+  return match ? Number(match[1]) : null;
 }
 
 export async function createKyronLessonCollection(

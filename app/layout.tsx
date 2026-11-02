@@ -4,6 +4,7 @@ import { IBM_Plex_Sans, Saira } from "next/font/google";
 import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
+import { getAuthMode } from "@/server/identity/auth-config";
 
 import "./globals.css";
 
@@ -29,22 +30,26 @@ type RootLayoutProps = Readonly<{
 }>;
 
 export default function RootLayout({ children }: RootLayoutProps) {
-  return (
-    <ClerkProvider afterSignOutUrl="/sign-in">
-      <html
-        className={cn(
-          "scroll-smooth motion-reduce:scroll-auto",
-          "font-sans",
-          bodyFont.variable,
-          headingFont.variable,
-        )}
-        data-scroll-behavior="smooth"
-        lang="en"
-      >
-        <body className="m-0 bg-background font-sans text-foreground antialiased">
-          {children}
-        </body>
-      </html>
-    </ClerkProvider>
+  const document = (
+    <html
+      className={cn(
+        "scroll-smooth motion-reduce:scroll-auto",
+        "font-sans",
+        bodyFont.variable,
+        headingFont.variable,
+      )}
+      data-scroll-behavior="smooth"
+      lang="en"
+    >
+      <body className="m-0 bg-background font-sans text-foreground antialiased">
+        {children}
+      </body>
+    </html>
   );
+
+  if (getAuthMode() === "access-code") {
+    return document;
+  }
+
+  return <ClerkProvider afterSignOutUrl="/sign-in">{document}</ClerkProvider>;
 }

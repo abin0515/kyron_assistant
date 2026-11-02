@@ -1,0 +1,20 @@
+CREATE TABLE IF NOT EXISTS llm_usage_events (
+  id UUID PRIMARY KEY,
+  occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  purpose TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  model TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('completed', 'incomplete', 'error')),
+  input_tokens INTEGER NOT NULL DEFAULT 0,
+  cached_input_tokens INTEGER NOT NULL DEFAULT 0,
+  output_tokens INTEGER NOT NULL DEFAULT 0,
+  reasoning_tokens INTEGER NOT NULL DEFAULT 0,
+  estimated_cost_usd NUMERIC(14, 8),
+  pricing_id UUID REFERENCES model_pricing(id) ON DELETE SET NULL,
+  latency_ms INTEGER,
+  error_code TEXT,
+  actor_id TEXT,
+  qa_run_id UUID,
+  workspace_id UUID,
+  provider_request_id TEXT
+);

@@ -42,6 +42,7 @@ describe("course setup calibration repository", () => {
       id: "user_123",
       name: "Tasha Reviewer",
       email: "tasha@example.com",
+      role: "user" as const,
     };
 
     await markCourseSetupReviewed(

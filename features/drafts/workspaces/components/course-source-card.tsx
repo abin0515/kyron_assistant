@@ -88,7 +88,7 @@ export function CourseSourceCard({
             {generating ? (
               <>
                 <LoaderCircle aria-hidden="true" className="animate-spin" />
-                Generating…
+                Generating and checking…
               </>
             ) : (
               <>

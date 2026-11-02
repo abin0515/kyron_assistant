@@ -5,22 +5,51 @@ import {
   FileText,
   FolderOpen,
   Layers3,
+  LoaderCircle,
+  LogOut,
   Menu,
+  Plug,
   Plus,
+  ScrollText,
+  ShieldCheck,
   X,
+  type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
 
-import { buttonVariants } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { signOut } from "@/features/auth/api";
 import { cn } from "@/lib/utils";
+import type { WorkspaceAccount } from "@/types/api";
 
 type WorkspaceShellProps = {
+  account: WorkspaceAccount;
   children: ReactNode;
 };
 
-export function WorkspaceShell({ children }: WorkspaceShellProps) {
+const AccountContext = createContext<WorkspaceAccount>({
+  mode: "clerk",
+  role: "user",
+});
+
+export function WorkspaceShell({ account, children }: WorkspaceShellProps) {
+  return (
+    <AccountContext.Provider value={account}>
+      <WorkspaceFrame>{children}</WorkspaceFrame>
+    </AccountContext.Provider>
+  );
+}
+
+function WorkspaceFrame({ children }: { children: ReactNode }) {
   const pathname = usePathname();
 
   return (
@@ -58,9 +87,7 @@ function DesktopNavigation({ pathname }: { pathname: string }) {
       </div>
 
       <nav aria-label="Primary navigation" className="grid gap-1.5 px-3">
-        <DraftsLink active={pathname.startsWith("/drafts")} />
-        <SourcesLink active={pathname.startsWith("/sources")} />
-        <BatchDraftsLink active={pathname.startsWith("/batches")} />
+        <PrimaryNavigationLinks pathname={pathname} />
       </nav>
 
       <div className="mt-auto border-t border-border/80 bg-surface-subtle p-4">
@@ -157,9 +184,7 @@ function MobileNavigation({ pathname }: { pathname: string }) {
                 }
               }}
             >
-              <DraftsLink active={pathname.startsWith("/drafts")} />
-              <SourcesLink active={pathname.startsWith("/sources")} />
-              <BatchDraftsLink active={pathname.startsWith("/batches")} />
+              <PrimaryNavigationLinks pathname={pathname} />
             </nav>
             <div className="mt-auto border-t border-border bg-surface-subtle p-4">
               <CurrentUserMenu />
@@ -199,6 +224,73 @@ function BrandContent() {
 }
 
 function CurrentUserMenu({ compact = false }: { compact?: boolean }) {
+  const account = useContext(AccountContext);
+
+  if (account.mode === "access-code") {
+    return (
+      <AccessCodeUserMenu
+        compact={compact}
+        name={account.name}
+        role={account.role}
+      />
+    );
+  }
+
+  return <ClerkUserMenu compact={compact} />;
+}
+
+function AccessCodeUserMenu({
+  compact,
+  name,
+  role,
+}: {
+  compact: boolean;
+  name: string;
+  role: "admin" | "developer";
+}) {
+  const [signingOut, setSigningOut] = useState(false);
+
+  async function handleSignOut() {
+    setSigningOut(true);
+
+    try {
+      await signOut();
+      window.location.assign("/sign-in");
+    } catch {
+      setSigningOut(false);
+    }
+  }
+
+  return (
+    <div className="flex min-w-0 items-center gap-3">
+      {compact ? null : (
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium">{name}</p>
+          <Badge variant={role === "admin" ? "info" : "neutral"}>
+            {role === "admin" ? "Admin" : "Developer"}
+          </Badge>
+        </div>
+      )}
+      <Button
+        aria-label="Sign out"
+        disabled={signingOut}
+        onClick={() => void handleSignOut()}
+        size="icon-sm"
+        title="Sign out"
+        type="button"
+        variant="ghost"
+      >
+        {signingOut ? (
+          <LoaderCircle aria-hidden="true" className="animate-spin" />
+        ) : (
+          <LogOut aria-hidden="true" />
+        )}
+      </Button>
+    </div>
+  );
+}
+
+function ClerkUserMenu({ compact }: { compact: boolean }) {
   const { isLoaded, user } = useUser();
 
   if (!isLoaded) {
@@ -247,25 +339,66 @@ function NewDraftLink({ className }: { className?: string }) {
   );
 }
 
-function DraftsLink({ active }: { active: boolean }) {
+function PrimaryNavigationLinks({ pathname }: { pathname: string }) {
+  const account = useContext(AccountContext);
+
   return (
-    <Link
-      aria-current={active ? "page" : undefined}
-      className={cn(
-        "relative flex min-h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium",
-        active
-          ? "bg-accent text-foreground before:absolute before:top-2 before:bottom-2 before:left-0 before:w-0.5 before:rounded-full before:bg-primary"
-          : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
-      )}
-      href="/drafts"
-    >
-      <FileText aria-hidden="true" className="size-4" />
-      Drafts
-    </Link>
+    <>
+      <NavigationLink
+        active={pathname.startsWith("/drafts")}
+        href="/drafts"
+        icon={FileText}
+        label="Drafts"
+      />
+      <NavigationLink
+        active={pathname.startsWith("/sources")}
+        href="/sources"
+        icon={FolderOpen}
+        label="Source Library"
+      />
+      <NavigationLink
+        active={pathname.startsWith("/batches")}
+        href="/batches"
+        icon={Layers3}
+        label="Batch drafts"
+      />
+      <NavigationLink
+        active={pathname.startsWith("/qa")}
+        href="/qa"
+        icon={ShieldCheck}
+        label="QA agent"
+      />
+      {account.role === "admin" || account.role === "developer" ? (
+        <NavigationLink
+          active={pathname.startsWith("/logs")}
+          href="/logs"
+          icon={ScrollText}
+          label="Logs"
+        />
+      ) : null}
+      {account.role === "admin" ? (
+        <NavigationLink
+          active={pathname.startsWith("/kyron")}
+          href="/kyron"
+          icon={Plug}
+          label="Kyron connection"
+        />
+      ) : null}
+    </>
   );
 }
 
-function BatchDraftsLink({ active }: { active: boolean }) {
+function NavigationLink({
+  active,
+  href,
+  icon: Icon,
+  label,
+}: {
+  active: boolean;
+  href: string;
+  icon: LucideIcon;
+  label: string;
+}) {
   return (
     <Link
       aria-current={active ? "page" : undefined}
@@ -275,33 +408,27 @@ function BatchDraftsLink({ active }: { active: boolean }) {
           ? "bg-accent text-foreground before:absolute before:top-2 before:bottom-2 before:left-0 before:w-0.5 before:rounded-full before:bg-primary"
           : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
       )}
-      href="/batches"
+      href={href}
     >
-      <Layers3 aria-hidden="true" className="size-4" />
-      <span>Batch drafts</span>
-    </Link>
-  );
-}
-
-function SourcesLink({ active }: { active: boolean }) {
-  return (
-    <Link
-      aria-current={active ? "page" : undefined}
-      className={cn(
-        "relative flex min-h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium",
-        active
-          ? "bg-accent text-foreground before:absolute before:top-2 before:bottom-2 before:left-0 before:w-0.5 before:rounded-full before:bg-primary"
-          : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
-      )}
-      href="/sources"
-    >
-      <FolderOpen aria-hidden="true" className="size-4" />
-      Source Library
+      <Icon aria-hidden="true" className="size-4" />
+      <span>{label}</span>
     </Link>
   );
 }
 
 function getPageLabel(pathname: string): string {
+  if (pathname.startsWith("/kyron")) {
+    return "Kyron connection";
+  }
+
+  if (pathname.startsWith("/qa")) {
+    return "QA agent";
+  }
+
+  if (pathname.startsWith("/logs")) {
+    return "Logs";
+  }
+
   if (pathname.startsWith("/sources")) {
     return "Source Library";
   }

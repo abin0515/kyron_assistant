@@ -95,6 +95,21 @@ export async function getDraftWorkspaceById(
   return rows[0] ? toDraftWorkspace(rows[0]) : null;
 }
 
+// Used by background QA, which runs without a user session.
+export async function findWorkspaceOwnerByKyronDraftId(
+  kyronDraftId: number,
+): Promise<{ workspaceId: string; ownerId: string } | null> {
+  const sql = getDatabase();
+  const rows = (await sql`
+    SELECT id, created_by_id
+    FROM draft_workspaces
+    WHERE kyron_draft_id = ${kyronDraftId}
+    LIMIT 1
+  `) as Array<{ id: string; created_by_id: string }>;
+
+  return rows[0] ? { workspaceId: rows[0].id, ownerId: rows[0].created_by_id } : null;
+}
+
 export async function updateDraftWorkspace(
   id: string,
   userId: string,

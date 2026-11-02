@@ -56,6 +56,7 @@ const user = {
   id: "user_123",
   name: "Tasha Reviewer",
   email: "tasha@example.com",
+  role: "user" as const,
 };
 const batchId = "f82d62c5-7818-4517-a960-09e28ecb0992";
 const workspaceId = "04bb97aa-47ae-4a87-a1eb-53ac43c3fba1";

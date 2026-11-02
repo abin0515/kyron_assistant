@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "db:migrate": "node --env-file-if-exists=.env.local scripts/migrate.mjs",
+    "qa:worker": "node --env-file-if-exists=.env.local scripts/qa-worker.mjs",
     "start": "next start",
     "test": "vitest run",
     "lint": "eslint .",
@@ -14,6 +15,7 @@
   "dependencies": {
     "@base-ui/react": "^1.6.0",
     "@clerk/nextjs": "^7.8.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "@napi-rs/canvas": "^1.0.8",
     "@neondatabase/serverless": "^1.1.0",
     "@vercel/blob": "^2.8.0",

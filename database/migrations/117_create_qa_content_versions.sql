@@ -1,0 +1,20 @@
+CREATE TABLE IF NOT EXISTS qa_content_versions (
+  id UUID PRIMARY KEY,
+  lesson_id UUID NOT NULL REFERENCES qa_lessons(id) ON DELETE CASCADE,
+  target TEXT NOT NULL CHECK (target IN ('course_setup', 'lesson')),
+  version_number INTEGER NOT NULL CHECK (version_number > 0),
+  parent_version_id UUID REFERENCES qa_content_versions(id) ON DELETE SET NULL,
+  status TEXT NOT NULL CHECK (status IN ('applied', 'proposed')),
+  source TEXT NOT NULL,
+  author TEXT NOT NULL,
+  model TEXT,
+  run_id UUID,
+  workspace_id UUID,
+  kyron_draft_id BIGINT,
+  content_hash TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  changes JSONB NOT NULL DEFAULT '[]'::JSONB CHECK (JSONB_TYPEOF(changes) = 'array'),
+  content JSONB NOT NULL CHECK (JSONB_TYPEOF(content) = 'object'),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (lesson_id, target, version_number)
+);

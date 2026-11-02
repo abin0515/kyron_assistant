@@ -2,7 +2,7 @@ import "server-only";
 
 import { getOpenAIEnv } from "@/server/env";
 import { listCurrentWorkspaceSourceFiles } from "@/server/drafts/workspace-source-files/service";
-import { getOpenAIClient } from "@/server/llm/openai-client";
+import { createLoggedResponse } from "@/server/llm/openai-client";
 import {
   extractCurrentUserSourceFileText,
   SourceFileExtractionInProgressError,
@@ -44,12 +44,13 @@ export async function generateCourseSetupWithMetadata(
   const input = await buildCourseSetupInput(brief, workspaceId);
   const model = getOpenAIEnv().OPENAI_MODEL;
 
-  const response = await getOpenAIClient().responses.create(
+  const response = await createLoggedResponse(
+    "course_setup",
     {
       model,
       instructions: COURSE_SETUP_INSTRUCTIONS,
       input,
-      reasoning: { effort: "low" },
+      reasoning: { effort: "medium" },
       max_output_tokens: 2_000,
       store: false,
       text: {

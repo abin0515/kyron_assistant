@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS qa_snapshots (
+  id UUID PRIMARY KEY,
+  lesson_id UUID NOT NULL REFERENCES qa_lessons(id) ON DELETE CASCADE,
+  data JSONB NOT NULL CHECK (JSONB_TYPEOF(data) = 'object'),
+  record_created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

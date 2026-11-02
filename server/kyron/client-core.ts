@@ -34,11 +34,21 @@ type ResponseParser<ResponseBody> = (
   value: unknown,
 ) => ResponseBody | null;
 
+export type KyronRequestReport = {
+  method: string;
+  path: string;
+  status: number | null;
+  durationMs: number;
+  errorCode: string | null;
+};
+
 export type KyronClientConfig = {
   apiKey: string;
   baseUrl: string;
   timeoutMs?: number;
   fetchImplementation?: FetchImplementation;
+  // Called once per request for logging; never receives bodies or headers.
+  onRequestComplete?: (report: KyronRequestReport) => void;
 };
 
 export class KyronClientError extends Error {
@@ -124,6 +134,7 @@ export function createKyronClient({
   baseUrl,
   timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
   fetchImplementation = fetch,
+  onRequestComplete,
 }: KyronClientConfig) {
   const normalizedBaseUrl = baseUrl.replace(/\/+$/, "");
 
@@ -134,6 +145,15 @@ export function createKyronClient({
   ): Promise<ResponseBody> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    const startedAt = Date.now();
+    const report = (status: number | null, errorCode: string | null) =>
+      onRequestComplete?.({
+        method,
+        path: path.split("?")[0],
+        status,
+        durationMs: Date.now() - startedAt,
+        errorCode,
+      });
     let response: Response;
 
     try {
@@ -154,6 +174,8 @@ export function createKyronClient({
         signal: controller.signal,
       });
     } catch {
+      report(null, controller.signal.aborted ? "REQUEST_TIMEOUT" : "KYRON_UNAVAILABLE");
+
       if (controller.signal.aborted) {
         throw new KyronClientError({
           code: "REQUEST_TIMEOUT",
@@ -178,6 +200,8 @@ export function createKyronClient({
     } catch {
       responseBody = undefined;
     }
+
+    report(response.status, response.ok ? null : errorForStatus(response.status).code);
 
     if (!response.ok) {
       throw errorForStatus(response.status);

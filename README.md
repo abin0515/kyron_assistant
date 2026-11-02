@@ -27,7 +27,9 @@ Files linked to active workspaces cannot be deleted.
 
 ## Local setup
 
-1. Copy `.env.example` to `.env.local` and add the required values.
+1. Copy `.env.example` to `.env.local` and add the required values. For
+   local work set `AUTH_MODE=access-code` and generate `SESSION_SECRET` and
+   `TOKEN_ENCRYPTION_KEY` with the commands shown in `.env.example`.
 2. Link the project with `npx vercel link`.
 3. Run `npx vercel env pull .env.development.local --environment=development`
    so local server code can read private Vercel Blob files through OIDC.
@@ -35,8 +37,55 @@ Files linked to active workspaces cannot be deleted.
 5. Run `npm run db:migrate`.
 6. Run `npm run dev`.
 
-Clerk handles authentication. Workspace and draft records are scoped to the
-signed-in Clerk user ID.
+### Sign-in
+
+With `AUTH_MODE=access-code`, the app skips Clerk and accepts the preset codes
+in `ACCESS_CODE_ADMIN` and `ACCESS_CODE_DEVELOPER`. This mode only serves
+`localhost`. The admin can manage the Kyron connection. The developer uses the
+product as a normal user. Each code has its own drafts, sources, and batches.
+
+With `AUTH_MODE=clerk` (the default when unset), Clerk handles authentication
+and records are scoped to the signed-in Clerk user ID.
+
+### Kyron MCP connection (development)
+
+The QA agent reads Kyron lesson content through Kyron MCP, which requires a
+per-user OAuth sign-in. Kyron identifies the app by a public client metadata
+file (CIMD), so that one file must be reachable over HTTPS even though the app
+runs on localhost:
+
+1. Sign in with the admin code and open **Kyron connection**.
+2. Copy the JSON shown there into a secret GitHub gist named
+   `kyron-client.json`.
+3. Use the gist's raw address without the commit ID, for example
+   `https://gist.githubusercontent.com/USER/GIST_ID/raw/kyron-client.json`,
+   as both the file's `client_id` and `KYRON_OAUTH_CLIENT_ID` in `.env.local`.
+4. Restart `npm run dev` and choose **Connect Kyron**.
+
+Tokens are encrypted with `TOKEN_ENCRYPTION_KEY` and stored in
+`.data/kyron-oauth.json`, which is git-ignored. The tool explorer lists every
+Kyron MCP tool and runs only tools that Kyron marks read-only.
+
+### QA agent
+
+Quality checks run inside generation: generating a course setup checks it
+against the workspace sources and a revision agent (`gpt-6-luna`) applies safe
+fixes, creating the Kyron draft waits for a passing check, and a finished Kyron
+draft starts a check of the generated lesson. Results appear in **Quality
+checks** on each workspace page, across workspaces under **QA agent**, and costs
+and every content version (before/after per field) under **Logs**. See
+[docs/QA_AGENT_PLAN.md](docs/QA_AGENT_PLAN.md).
+
+Optionally run `npm run qa:worker` in a second terminal (uses `CRON_SECRET`)
+so checks that outlast a request keep going without an open page.
+
+The QA, content-version and log tables are migrations `100`–`120`. On a database shared with
+other branches, apply only those files instead of `npm run db:migrate`, which
+re-runs every migration:
+
+```bash
+node --env-file=.env.local -e "const fs=require('fs');const {neon}=require('@neondatabase/serverless');const sql=neon(process.env.DATABASE_URL);(async()=>{for(const f of fs.readdirSync('database/migrations').filter(f=>/^1\d\d_/.test(f)).sort()){await sql.query(fs.readFileSync('database/migrations/'+f,'utf8'));console.log('applied',f)}})()"
+```
 
 ## Project structure
 
@@ -49,7 +98,9 @@ signed-in Clerk user ID.
 
 ## Main routes
 
-- `/sign-in`: Clerk authentication
+- `/sign-in`: access-code or Clerk sign-in, depending on `AUTH_MODE`
+- `/qa`: QA agent lessons, runs, escalations and rubrics
+- `/kyron`: admin Kyron MCP connection and tool explorer
 - `/drafts`: workspace management and status filters
 - `/drafts/new`: create an autosaved workspace
 - `/drafts/[id]`: generate, edit, submit, and monitor a draft

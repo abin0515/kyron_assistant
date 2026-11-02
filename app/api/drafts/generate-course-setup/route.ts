@@ -22,6 +22,8 @@ import type { GenerateCourseSetupResponse } from "@/types/api";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// Generation now includes the course-setup quality check and its fixes.
+export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
   if (!hasSameOrigin(request)) {

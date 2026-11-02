@@ -1,9 +1,6 @@
-# Local secrets
-.env
-.env.*
+# Local secrets. The exception must stay after every .env pattern.
+.env*
 !.env.example
-.env.local
-.env.*.local
 
 # macOS metadata
 .DS_Store
@@ -14,7 +11,7 @@ node_modules/
 out/
 
 # Vercel project metadata
-.vercel/
+.vercel
 
 # Logs and tooling
 *.log
@@ -24,5 +21,6 @@ coverage/
 
 # Generated test artifacts
 output/
-.vercel
-.env*
+
+# Local encrypted Kyron sign-in tokens
+.data/
