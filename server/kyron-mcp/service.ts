@@ -36,6 +36,7 @@ import {
   revokeToken,
   tokenNeedsRefresh,
 } from "./oauth";
+import { QA_RENDER_TOOL, QA_WRITE_TOOLS } from "./qa-tools";
 import {
   deleteKyronConnection,
   readKyronConnection,
@@ -53,15 +54,8 @@ export const PENDING_AUTHORIZATION_COOKIE = "kyron_oauth_pending";
 export const PENDING_AUTHORIZATION_COOKIE_PATH = "/api/kyron-mcp/oauth";
 
 const AUTHORIZATION_SERVER_CACHE_MS = 60 * 60 * 1000;
-// The only Kyron tools that change content or start work which QA may call.
-const QA_WRITE_TOOLS = new Set([
-  "update_lesson_activity",
-  "update_lesson",
-  "update_lesson_section",
-  "update_vocabulary_item",
-  // Renders video for the lesson; used only after its script passes QA.
-  "regenerate_all_lesson_videos",
-]);
+
+type ReadPurpose = "qa.read" | "admin.view";
 
 export function getKyronClientMetadataSetup(): KyronClientMetadataSetup {
   const env = getKyronMcpEnv();
@@ -256,15 +250,19 @@ export async function callKyronReadOnlyTool(
 }
 
 // Runs several read-only tool calls in one Kyron session, for reading a whole
-// lesson. Tools Kyron does not mark read-only are refused.
-export async function withKyronReader<T>(run: (read: KyronToolReader) => Promise<T>): Promise<T> {
-  return withKyronSession(false, ({ read }) => run(read));
+// lesson. Tools Kyron does not mark read-only are refused. The purpose labels
+// the log entries, so admin views are told apart from QA reads.
+export async function withKyronReader<T>(
+  run: (read: KyronToolReader) => Promise<T>,
+  purpose: ReadPurpose = "qa.read",
+): Promise<T> {
+  return withKyronSession(false, purpose, ({ read }) => run(read));
 }
 
 // Read-only tools plus the few update tools QA fixes use. Deleting,
 // publishing, generating and settings changes are never allowed.
 export async function withKyronWriter<T>(run: (session: KyronToolSession) => Promise<T>): Promise<T> {
-  return withKyronSession(true, run);
+  return withKyronSession(true, "qa.read", run);
 }
 
 // True when the saved Kyron sign-in includes the write permission.
@@ -282,6 +280,7 @@ export async function hasKyronWriteAccess(): Promise<boolean> {
 
 async function withKyronSession<T>(
   allowWrites: boolean,
+  readPurpose: ReadPurpose,
   run: (session: KyronToolSession) => Promise<T>,
 ): Promise<T> {
   const allowlist = getKyronMcpEnv().KYRON_MCP_READ_TOOLS;
@@ -293,12 +292,12 @@ async function withKyronSession<T>(
         .map((tool) => tool.name),
     );
     const call =
-      (purpose: "qa.read" | "qa.write", allowed: (name: string) => boolean) =>
+      (purpose: ReadPurpose | "qa.write", allowed: (name: string) => boolean) =>
       async (name: string, args: Record<string, unknown>, detail: Record<string, unknown> = {}) => {
         if (!allowed(name)) {
           throw new KyronMcpError(
             "KYRON_MCP_TOOL_NOT_ALLOWED",
-            `QA does not call the Kyron tool "${name}" (${purpose === "qa.read" ? "not read-only" : "not an allowed update"}).`,
+            `QA does not call the Kyron tool "${name}" (${purpose === "qa.write" ? "not an allowed update" : "not read-only"}).`,
           );
         }
 
@@ -309,7 +308,7 @@ async function withKyronSession<T>(
           category: "kyron_mcp",
           event: "kyron_mcp.tool_call",
           level: result.isError ? "warn" : "info",
-          message: `QA ${purpose === "qa.read" ? "read" : "updated"} ${name}${result.isError ? " (tool reported an error)" : ""}.`,
+          message: `${toolCallVerb(purpose)} ${name}${result.isError ? " (tool reported an error)" : ""}.`,
           durationMs: Date.now() - startedAt,
           data: { tool: name, purpose, ...detail },
         });
@@ -318,10 +317,21 @@ async function withKyronSession<T>(
       };
 
     return run({
-      read: call("qa.read", (name) => readable.has(name)),
-      write: call("qa.write", (name) => allowWrites && QA_WRITE_TOOLS.has(name)),
+      read: call(readPurpose, (name) => readable.has(name)),
+      write: call("qa.write", (name) => allowWrites && (QA_WRITE_TOOLS.has(name) || name === QA_RENDER_TOOL)),
     });
   });
+}
+
+function toolCallVerb(purpose: ReadPurpose | "qa.write"): string {
+  switch (purpose) {
+    case "qa.read":
+      return "QA read";
+    case "qa.write":
+      return "QA updated";
+    case "admin.view":
+      return "Admin view read";
+  }
 }
 
 async function withConnectedClient<T>(

@@ -381,7 +381,7 @@ function PrimaryNavigationLinks({ pathname }: { pathname: string }) {
           active={pathname.startsWith("/kyron")}
           href="/kyron"
           icon={Plug}
-          label="Kyron connection"
+          label="Kyron"
         />
       ) : null}
     </>
@@ -418,7 +418,7 @@ function NavigationLink({
 
 function getPageLabel(pathname: string): string {
   if (pathname.startsWith("/kyron")) {
-    return "Kyron connection";
+    return "Kyron";
   }
 
   if (pathname.startsWith("/qa")) {

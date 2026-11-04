@@ -20,6 +20,7 @@ import type {
 } from "@/types/api";
 
 import { KyronMcpError } from "./errors";
+import { qaUseFor } from "./qa-tools";
 
 const CLIENT_INFO = { name: "cpe-course-studio", version: "0.1.0" };
 const CONNECT_TIMEOUT_MS = 30_000;
@@ -143,6 +144,7 @@ export function summarizeTool(
         }
       : null,
     explorerAllowed: isExplorerAllowedTool(tool, allowlist),
+    qaUse: qaUseFor(tool.name),
   };
 }
 

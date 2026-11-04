@@ -46,7 +46,7 @@ export function QaEscalationsPage() {
   return (
     <div className="grid gap-6">
       <PageHeader
-        description="Findings the agent will not change on its own: answer keys, critical problems, conflicts, and fixes that failed twice. Open the run to accept, reject or waive each one."
+        description="Findings the agent could not fix on its own: concurrent edits in Kyron, problems with no automatic fix, and fixes that failed twice. Every other fix is applied automatically. Open the run to accept, reject or waive each one."
         title="Escalations"
       />
       {state.status === "loading" ? (

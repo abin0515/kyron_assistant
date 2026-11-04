@@ -299,7 +299,10 @@ function decideStep(run: StoredQaRun, source: LessonContentSource): StepResult {
           updateFindings(current, exhausted, (finding) => ({
             ...finding,
             status: "escalated",
-            escalationReason: `Still failing after ${MAX_REPAIR_ATTEMPTS} automatic fixes.`,
+            // Keeps the verifier's note about the last attempt, if any.
+            escalationReason: [`Still failing after ${MAX_REPAIR_ATTEMPTS} automatic fixes.`, finding.escalationReason]
+              .filter(Boolean)
+              .join(" "),
           })),
           "warn",
           `${exhausted.length} finding(s) escalated after ${MAX_REPAIR_ATTEMPTS} fix attempts.`,
@@ -407,7 +410,9 @@ async function reviseStep(
       ? await recordProposedVersion({
           lesson,
           model: agent?.model ?? null,
-          note: source.writable ? "the changes need a person's approval" : "apply them in Kyron Studio",
+          note: source.writable
+            ? "automatic fixes are turned off (QA_AUTONOMY_POLICY=propose_only)"
+            : "apply them in Kyron Studio",
           revisions: proposed,
           run,
           snapshot: after ?? snapshot,
@@ -439,7 +444,7 @@ async function reviseStep(
   if (proposedVersion) {
     messages.push({
       level: "info",
-      message: `Saved ${proposed.length} unapplied change(s) as proposed content v${proposedVersion.versionNumber}${source.writable ? " for approval" : " to apply in Kyron Studio"}.`,
+      message: `Saved ${proposed.length} unapplied change(s) as proposed content v${proposedVersion.versionNumber}${source.writable ? " for a person to review" : " to apply in Kyron Studio"}.`,
     });
   }
 
@@ -481,7 +486,8 @@ async function reviseStep(
 }
 
 // An independent check of the changes just written. A change judged to
-// introduce an error is undone and its findings go to a person.
+// introduce an error is undone and its findings stay open, so the revision
+// agent tries again; they escalate only once the attempts are used up.
 async function verifyStep(run: StoredQaRun, lesson: QaLesson, source: LessonContentSource): Promise<StepResult> {
   const changes = run.unverifiedChanges ?? [];
 
@@ -517,9 +523,10 @@ async function verifyStep(run: StoredQaRun, lesson: QaLesson, source: LessonCont
   const version = after
     ? await recordRevisionVersion({ author: VERIFIER_NAME, lesson, model: null, revisions: reverted, run, snapshot: after })
     : null;
-  const escalate = new Map(
+  // The verifier's reason goes to the revision agent with the next attempt.
+  const rejected = new Map(
     harmful.flatMap(({ change, explanation }) =>
-      change.findingIds.map((findingId) => [findingId, `The independent check rejected the fix: ${explanation}`] as const),
+      change.findingIds.map((findingId) => [findingId, `The independent check rejected the last fix: ${explanation}`] as const),
     ),
   );
   const summary = VERDICT_ORDER.map((name) => `${verdicts.filter((verdict) => verdict.verdict === name).length} ${name.replace(/_/g, " ")}`).join(", ");
@@ -529,20 +536,29 @@ async function verifyStep(run: StoredQaRun, lesson: QaLesson, source: LessonCont
     update: (current) => {
       const checked = addUsage(
         {
-          ...updateFindings(current, [...escalate.keys()], (finding) => ({
+          ...updateFindings(current, [...rejected.keys()], (finding) => ({
             ...finding,
-            status: "escalated",
-            escalationReason: escalate.get(finding.id) ?? finding.escalationReason,
+            status: "open",
+            proposedPatch: null,
+            escalationReason: rejected.get(finding.id) ?? finding.escalationReason,
           })),
           snapshotId: after?.id ?? current.snapshotId,
           unverifiedChanges: [],
+          // A reverted field is back to its checked text; nothing to re-check.
+          patchedFields: current.patchedFields.filter(
+            (field) => !reverted.some((undo) => (undo.activityId ?? "") === field.activityId && undo.fieldPath === field.fieldPath),
+          ),
         },
         [usage],
       );
       const noted = appendEvent(checked, harmful.length > 0 ? "warn" : "info", `${VERIFIER_NAME}: ${summary}.`);
 
       return version
-        ? appendEvent(noted, "warn", `Reverted ${reverted.length} change(s) the ${VERIFIER_NAME} rejected. Saved as content v${version.versionNumber}.`)
+        ? appendEvent(
+            noted,
+            "warn",
+            `Reverted ${reverted.length} change(s) the ${VERIFIER_NAME} rejected (content v${version.versionNumber}); the revision agent will try again.`,
+          )
         : noted;
     },
   };
@@ -917,7 +933,7 @@ function decideRevision(
   const decisions = findings
     .filter((finding) => revision.findingIds.includes(finding.id))
     .map((finding) =>
-      decideRepair({ severity: finding.severity, status: finding.status, proposedPatch: revision }, options),
+      decideRepair({ status: finding.status, proposedPatch: revision }, options),
     );
 
   return decisions.find((decision) => decision.action !== "apply") ?? { action: "apply" };
@@ -1012,7 +1028,8 @@ function applyOutcome(finding: QaFinding, outcome: RevisionOutcome | undefined):
     proposedPatch: outcome.proposedPatch,
     proposalAttempted: true,
     status: outcome.status ?? finding.status,
-    escalationReason: outcome.escalationReason ?? finding.escalationReason,
+    // A fix that was written clears the note about an earlier rejected attempt.
+    escalationReason: outcome.applied ? null : (outcome.escalationReason ?? finding.escalationReason),
     repairAttempts: finding.repairAttempts + (outcome.applied ? 1 : 0),
   };
 }

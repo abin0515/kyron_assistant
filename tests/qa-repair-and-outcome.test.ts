@@ -43,27 +43,25 @@ const rubric = {
 describe("repair policy", () => {
   const writable = { policy: "auto" as const, writable: true };
 
-  it("applies low-risk fixes automatically", () => {
-    expect(decideRepair({ severity: "major", status: "open", proposedPatch: proposal }, writable)).toEqual({ action: "apply" });
+  it("applies every proposed fix automatically, answer keys and lesson settings included", () => {
+    expect(decideRepair({ status: "open", proposedPatch: proposal }, writable)).toEqual({ action: "apply" });
+    expect(decideRepair({ status: "open", proposedPatch: { ...proposal, protectedField: true } }, writable)).toEqual({
+      action: "apply",
+    });
   });
 
-  it("escalates answer keys, critical findings and propose-only mode", () => {
+  it("holds fixes back only in propose-only mode", () => {
     expect(
-      decideRepair({ severity: "major", status: "open", proposedPatch: { ...proposal, protectedField: true } }, writable).action,
+      decideRepair({ status: "open", proposedPatch: proposal }, { policy: "propose_only", writable: true }).action,
     ).toBe("escalate");
-    expect(decideRepair({ severity: "critical", status: "open", proposedPatch: proposal }, writable).action).toBe("escalate");
     expect(
-      decideRepair({ severity: "major", status: "open", proposedPatch: proposal }, { policy: "propose_only", writable: true }).action,
-    ).toBe("escalate");
-  });
-
-  it("applies a critical fix once a person accepts it", () => {
-    expect(decideRepair({ severity: "critical", status: "accepted", proposedPatch: proposal }, writable)).toEqual({ action: "apply" });
+      decideRepair({ status: "accepted", proposedPatch: proposal }, { policy: "propose_only", writable: true }),
+    ).toEqual({ action: "apply" });
   });
 
   it("only proposes when the lesson cannot be written", () => {
-    expect(decideRepair({ severity: "major", status: "open", proposedPatch: proposal }, { policy: "auto", writable: false }).action).toBe("propose_only");
-    expect(decideRepair({ severity: "major", status: "open", proposedPatch: null }, writable).action).toBe("escalate");
+    expect(decideRepair({ status: "open", proposedPatch: proposal }, { policy: "auto", writable: false }).action).toBe("propose_only");
+    expect(decideRepair({ status: "open", proposedPatch: null }, writable).action).toBe("escalate");
   });
 });
 

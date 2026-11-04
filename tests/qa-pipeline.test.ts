@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   kyronSource: null as unknown,
   budgetProblem: null as string | null,
   verdict: "resolves" as string,
+  // One verdict per verifier call, in order; then `verdict`.
+  verdicts: [] as string[],
   transcripts: [] as string[],
 }));
 
@@ -40,10 +42,14 @@ vi.mock("@/server/production/service", () => ({
 vi.mock("@/server/qa/defects", () => ({ recordDefect: vi.fn() }));
 vi.mock("@/server/qa/verifier", () => ({
   VERIFIER_NAME: "QA verifier",
-  verifyChanges: async ({ changes }: { changes: unknown[] }) => ({
-    verdicts: changes.map((_, index) => ({ index, verdict: mocks.verdict, explanation: "Checked against the reference." })),
-    usage: { purpose: "qa.verify", inputTokens: 30, outputTokens: 10, reasoningTokens: 5 },
-  }),
+  verifyChanges: async ({ changes }: { changes: unknown[] }) => {
+    const verdict = mocks.verdicts.shift() ?? mocks.verdict;
+
+    return {
+      verdicts: changes.map((_, index) => ({ index, verdict, explanation: "Checked against the reference." })),
+      usage: { purpose: "qa.verify", inputTokens: 30, outputTokens: 10, reasoningTokens: 5 },
+    };
+  },
 }));
 vi.mock("@/server/qa/evaluators/media", () => ({
   evaluateNarrationMatch: async (_snapshot: unknown, transcript: string) => {
@@ -155,6 +161,7 @@ beforeEach(() => {
   mocks.kyronSource = null;
   mocks.budgetProblem = null;
   mocks.verdict = "resolves";
+  mocks.verdicts = [];
   mocks.transcripts = [];
 });
 
@@ -222,7 +229,7 @@ describe("course-setup QA inside generation", () => {
     });
   });
 
-  it("escalates a critical setup problem instead of changing it", async () => {
+  it("fixes a critical setup problem automatically, without waiting for a person", async () => {
     const setup = fakeSetupSource({ learningObjective: "Understand overfitting.", description: "OFF-TOPIC" });
     const run = await startQaRun({
       createdBy: "Tester",
@@ -233,23 +240,26 @@ describe("course-setup QA inside generation", () => {
     });
     const finished = await runToCompletion(run.id);
 
-    expect(finished.stage).toBe("escalated");
+    expect(finished.stage).toBe("passed");
     expect(finished.findings.find((finding) => finding.severity === "critical")).toMatchObject({
-      status: "escalated",
-      escalationReason: "Critical findings need a person's approval.",
+      status: "fixed",
+      escalationReason: null,
     });
-    expect(setup.current().description).toBe("OFF-TOPIC");
+    expect(setup.current().description).toBe("How training and test accuracy diverge.");
 
-    const [proposed] = await versionsOf(finished.lessonId);
+    const versions = await versionsOf(finished.lessonId);
 
-    expect(proposed).toMatchObject({
-      status: "proposed",
-      changes: [{ fieldPath: "setup.description", before: "OFF-TOPIC", after: "How training and test accuracy diverge." }],
-    });
+    expect(versions.some((version) => version.status === "proposed")).toBe(false);
+    expect(versions[0]).toMatchObject({ status: "applied", author: "QA revision agent" });
+    expect(versions[0].changes.map((change) => change.fieldPath).sort()).toEqual([
+      "setup.description",
+      "setup.learningObjective",
+    ]);
   });
 
   it("gates Kyron submission on a current, passing setup check", async () => {
-    fakeSetupSource({ learningObjective: "Explain overfitting.", description: "OFF-TOPIC" });
+    // A blocking problem the revision agent cannot fix still stops submission.
+    fakeSetupSource({ learningObjective: "Explain overfitting.", description: "UNFIXABLE" });
     const workspace = fakeWorkspace("ws-2");
 
     await expect(assertSetupReadyForSubmission({ override: false, user, workspace })).rejects.toBeInstanceOf(
@@ -376,7 +386,7 @@ describe("generated-lesson QA", () => {
     expect(finished.usageByPurpose["qa.verify"]).toMatchObject({ calls: 1 });
   });
 
-  it("undoes a fix the independent check rejects and escalates it", async () => {
+  it("undoes a fix the independent check rejects, tries again, and escalates after two attempts", async () => {
     mocks.verdict = "introduces_error";
 
     const kyron = fakeKyronSource(lessonPacket);
@@ -388,13 +398,33 @@ describe("generated-lesson QA", () => {
       target: "lesson",
     });
     const finished = await runToCompletion(run.id);
-    const [reverted] = await versionsOf(finished.lessonId);
+    const versions = await versionsOf(finished.lessonId);
 
     expect(kyron.narration()).toContain("always improves");
     expect(kyron.narration()).not.toContain("does not always improve");
-    expect(finished.findings[0]).toMatchObject({ status: "escalated" });
-    expect(finished.findings[0].escalationReason).toContain("independent check rejected the fix");
-    expect(reverted).toMatchObject({ author: "QA verifier" });
+    expect(finished.usageByPurpose["qa.revision"]).toMatchObject({ calls: 2 });
+    expect(versions.filter((version) => version.author === "QA verifier")).toHaveLength(2);
+    expect(finished.findings[0]).toMatchObject({ status: "escalated", repairAttempts: 2 });
+    expect(finished.findings[0].escalationReason).toContain("Still failing after 2 automatic fixes");
+    expect(finished.findings[0].escalationReason).toContain("independent check rejected the last fix");
+  });
+
+  it("fixes a rejected change on the second attempt", async () => {
+    mocks.verdicts = ["introduces_error", "resolves"];
+
+    const kyron = fakeKyronSource(lessonPacket);
+    const run = await startQaRun({
+      createdBy: "Tester",
+      lesson: await saveLesson("ws-1"),
+      snapshot: null,
+      source: "kyron_mcp",
+      target: "lesson",
+    });
+    const finished = await runToCompletion(run.id);
+
+    expect(finished.stage).toBe("passed");
+    expect(kyron.narration()).toContain("does not always improve");
+    expect(finished.findings[0]).toMatchObject({ status: "fixed", repairAttempts: 2, escalationReason: null });
   });
 
   it("renders the video after the script passes and re-renders once when the narration differs", async () => {
@@ -636,8 +666,8 @@ function fakeRevision(finding: QaFinding, snapshot: QaLessonSnapshot): Revision 
   };
 }
 
-// Flags a vague objective (with a proposed fix) and an off-topic description
-// (critical, so it must never be applied automatically).
+// Flags a vague objective and an off-topic description (critical), both with
+// a proposed fix, and an "UNFIXABLE" description with no fix at all.
 async function fakeCourseSetup({ snapshot }: EvaluationInput): Promise<EvaluationOutput> {
   const objective = snapshot.lesson.learningObjectives[0] ?? "";
   const description = snapshot.lesson.description ?? "";
@@ -651,6 +681,13 @@ async function fakeCourseSetup({ snapshot }: EvaluationInput): Promise<Evaluatio
   if (description === "OFF-TOPIC") {
     findings.push(setupFinding("setup.source-fidelity", "setup.description", "critical", description,
       "How training and test accuracy diverge."));
+  }
+
+  if (description === "UNFIXABLE") {
+    findings.push({
+      ...setupFinding("setup.source-fidelity", "setup.description", "critical", description, ""),
+      proposedPatch: null,
+    });
   }
 
   return {

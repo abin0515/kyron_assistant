@@ -76,13 +76,17 @@ one-fix-per-finding repair:
    also the other text fields of the same activity; answer keys only when a
    finding is about the answer key), existing activities, one change per field,
    allowed setup values and lengths, answer keys naming existing options.
-3. Each change is decided with the existing policy (`decideRepair`): applied
-   automatically unless it is critical, changes an answer key, or the policy is
-   `propose_only`. A change a person accepted is applied exactly as approved.
+3. Each change is decided with the policy (`decideRepair`): every proposed
+   change is applied automatically where the content can be written, critical
+   findings, answer keys and lesson settings included (since Nov 4, 2026). Only
+   `propose_only` holds changes back. A change a person accepted from an
+   escalation is applied exactly as approved.
 4. Applied changes are written with a read before and after each field; a
    concurrent edit stops the round and escalates. The content is then re-read,
-   saved as a new version, and the affected checks re-run. At most two rounds per
-   finding.
+   saved as a new version, checked by the independent verifier, and the
+   affected checks re-run. A change the verifier rejects is undone and the
+   finding goes back to the revision agent with the verifier's reason. At most
+   two rounds per finding; a finding still failing after that escalates.
 5. Changes that cannot be applied (pasted content, or ones needing approval) are
    saved as a **proposed** version, downloadable in the paste format.
 
@@ -153,7 +157,8 @@ README). The app is the only caller; models never get tools.
   keeps the lecture script in step. Never sent: scene or vocabulary deletion,
   `generate_scenes`, theme or avatar changes, publishing.
 - **Protected**: answer keys and lesson settings (`lesson.title`, `audience`,
-  `objective`) always need a person's approval; accepted ones are then written.
+  `objective`) are marked as high-impact on each change and applied
+  automatically like other fixes (since Nov 4, 2026).
 - **Switches**: `QA_KYRON_WRITES` (`test-only` by default: drafts named
   "[QA Test] …"; `all`; `off`) and `QA_KYRON_VIDEO` (`off` by default; renders
   use Kyron credits). Without write permission or outside the switch, fixes are
@@ -199,7 +204,7 @@ automatically. CSV/JSON export feeds the testing sets.
 | 2 | QA runs inline in generation and submission, with a time budget; leftovers continue in the worker or an open page. | QA is part of the runtime and cannot depend on an open browser. |
 | 3 | Our server is the only Kyron MCP caller. Models never receive tools; repairs are structured patches the server validates. | Untrusted content must not steer writes. |
 | 4 | Every write is re-read before and after; a concurrent edit escalates. | Never overwrite a person's change. |
-| 5 | `QA_AUTONOMY_POLICY=auto`: confirmed non-critical fixes apply automatically; answer keys and critical findings escalate; at most two attempts. | Minimal human involvement without silent high-risk changes. |
+| 5 | `QA_AUTONOMY_POLICY=auto`: every proposed fix applies automatically, critical findings and answer keys included; each is read back, verified independently and re-checked; at most two attempts. Writes stay limited by `QA_KYRON_WRITES`. | QA runs without a person in the loop (decided Nov 4, 2026); a person sees only findings that two attempts could not fix. |
 | 5a | One revision agent (`gpt-6-luna`) resolves all open findings per round; the server validates and applies its changes. | Related changes stay consistent, and corrections use a pinned model. |
 | 5b | Every content state is saved as a numbered version with before/after per field. | A full audit trail of what the agents changed and why. |
 | 6 | Missing evidence is NOT_TESTED, never PASS; a run with untested required checks ends **Incomplete**. | A green summary must not hide gaps. |

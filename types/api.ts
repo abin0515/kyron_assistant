@@ -469,6 +469,130 @@ export type KyronMcpToolSummary = {
   outputSchema: unknown;
   annotations: KyronMcpToolAnnotations | null;
   explorerAllowed: boolean;
+  // How the QA harness uses the tool; null when it never calls it.
+  qaUse: KyronToolQaUse | null;
+};
+
+export type KyronToolQaUse = "reads" | "writes" | "renders" | "forbidden";
+
+// What the QA agent may do with one field of a Kyron lesson.
+export type KyronFieldAccess = "qa_fixes" | "qa_reads" | "not_checked";
+
+export type KyronContentField = {
+  // Matches KyronRevisionChange.key when QA can revise the field.
+  key: string | null;
+  label: string;
+  value: string | null;
+  access: KyronFieldAccess;
+};
+
+export type KyronContentScene = {
+  id: string;
+  part: string;
+  partLabel: string;
+  layout: string | null;
+  fields: KyronContentField[];
+  hasVideo: boolean;
+  hasCaptions: boolean;
+};
+
+export type KyronContentActivity = {
+  id: string;
+  name: string;
+  type: string;
+  typeLabel: string;
+  sectionId: number | null;
+  fields: KyronContentField[];
+  scenes: KyronContentScene[];
+  options: Array<{ id: string; text: string; correct: boolean }>;
+  modelAnswers: string[];
+  questionBank: string[];
+  knowledge: Array<{ knowledge: string; misconceptions: string[] }>;
+};
+
+export type KyronContentSection = {
+  id: number;
+  position: number;
+  topic: string | null;
+  objectives: string[];
+  understandings: string[];
+  essentialQuestions: string[];
+};
+
+export type KyronDraftContentResponse = {
+  draftId: number;
+  name: string;
+  status: string;
+  lockVersion: number;
+  readAt: string;
+  lessonFields: KyronContentField[];
+  presentation: Array<{ label: string; value: string }>;
+  misconceptions: Array<{ name: string; description: string | null; targetActivityId: number | null }>;
+  sections: KyronContentSection[];
+  activities: KyronContentActivity[];
+  vocabulary: Array<{ id: string; term: KyronContentField; definition: KyronContentField }>;
+  publishCheck: Array<{ name: string; activityCount: number }>;
+  toolsCalled: string[];
+};
+
+export type KyronRevisionKind = "qa_applied" | "qa_approved" | "qa_proposed" | "kyron_read" | "outside_change";
+
+export type KyronRevisionFinding = {
+  id: string;
+  severity: QaSeverity;
+  criterionId: string;
+  criterionTitle: string;
+  status: QaFindingStatus;
+  observedText: string | null;
+  expectedBehavior: string;
+  rationale: string;
+  decision: QaFinding["decision"];
+};
+
+export type KyronRevisionChange = {
+  key: string;
+  location: string;
+  before: string | null;
+  after: string;
+  rationale: string;
+  findings: KyronRevisionFinding[];
+  // For a proposal: the later QA version that applied the same text.
+  appliedInVersion: number | null;
+};
+
+export type KyronRevisionVersion = {
+  id: string;
+  versionNumber: number;
+  kind: KyronRevisionKind;
+  author: string;
+  model: string | null;
+  summary: string;
+  runId: string | null;
+  createdAt: string;
+  changes: KyronRevisionChange[];
+};
+
+export type KyronDraftRevisionsResponse = {
+  draftId: number;
+  lessonTitle: string | null;
+  latestRunId: string | null;
+  versions: KyronRevisionVersion[];
+};
+
+export type KyronContentDraftSummary = {
+  draftId: number;
+  name: string;
+  status: string;
+  available: boolean;
+  updatedAt: string | null;
+  qaChangesApplied: number;
+  qaChangesProposed: number;
+  latestRunId: string | null;
+  latestRunAt: string | null;
+};
+
+export type KyronContentDraftListResponse = {
+  drafts: KyronContentDraftSummary[];
 };
 
 export type KyronMcpCapabilityManifest = {

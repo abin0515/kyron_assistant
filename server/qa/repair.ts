@@ -17,10 +17,12 @@ export function autonomyPolicy(): AutonomyPolicy {
   return process.env.QA_AUTONOMY_POLICY?.trim() === "propose_only" ? "propose_only" : "auto";
 }
 
-// Fixes apply automatically only when nothing high-risk is involved; a person
-// approving the finding ("accepted") overrides the automatic limits.
+// Every proposed fix applies automatically when the content can be written,
+// critical findings and protected fields included: each one is read back,
+// checked by the independent verifier and re-checked. Only the emergency
+// switch QA_AUTONOMY_POLICY=propose_only holds fixes back.
 export function decideRepair(
-  finding: Pick<QaFinding, "severity" | "status" | "proposedPatch">,
+  finding: Pick<QaFinding, "status" | "proposedPatch">,
   { policy, writable }: { policy: AutonomyPolicy; writable: boolean },
 ): RepairDecision {
   if (!finding.proposedPatch) {
@@ -36,14 +38,6 @@ export function decideRepair(
 
   if (finding.status === "accepted") {
     return { action: "apply" };
-  }
-
-  if (finding.proposedPatch.protectedField) {
-    return { action: "escalate", reason: "Answer-key changes need a person's approval." };
-  }
-
-  if (finding.severity === "critical") {
-    return { action: "escalate", reason: "Critical findings need a person's approval." };
   }
 
   if (policy === "propose_only") {

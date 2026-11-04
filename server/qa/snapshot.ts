@@ -42,8 +42,9 @@ export const LESSON_FIELD_PATHS = ["lesson.title", "lesson.audience", "lesson.ob
 const SCENE_FIELD = /^scenes\.([^.]+)\.(narration|title|onScreenText)$/;
 const TERM_FIELD = /^vocabulary\.([^.]+)\.(term|definition)$/;
 
-// Answer keys and lesson-level settings redefine the lesson, so changes to
-// them always need a person's approval.
+// Answer keys and lesson-level settings redefine the lesson. Changes to them
+// apply automatically like any other fix; the flag stays on the change as a
+// record of a high-impact edit.
 export function isProtectedField(fieldPath: string): boolean {
   return fieldPath === "question.answerKey" || fieldPath.startsWith("lesson.");
 }

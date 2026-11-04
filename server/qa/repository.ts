@@ -101,6 +101,19 @@ export async function findLessonByWorkspace(workspaceId: string): Promise<QaLess
   return rows[0]?.data ?? null;
 }
 
+// The most recently updated QA lesson for a Kyron draft.
+export async function findLessonByKyronDraft(kyronDraftId: number): Promise<QaLesson | null> {
+  const rows = (await getDatabase()`
+    SELECT data
+    FROM qa_lessons
+    WHERE kyron_draft_id = ${kyronDraftId}
+    ORDER BY record_updated_at DESC
+    LIMIT 1
+  `) as Array<{ data: QaLesson }>;
+
+  return rows[0]?.data ?? null;
+}
+
 export async function listLessons(ownerId?: string): Promise<QaLesson[]> {
   const rows = (await getDatabase()`
     SELECT data

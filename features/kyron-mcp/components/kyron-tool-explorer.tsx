@@ -14,9 +14,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { InlineNotice } from "@/components/ui/inline-notice";
+import { Input } from "@/components/ui/input";
 import { getKyronCapabilities } from "@/features/kyron-mcp/api";
 import { JsonBlock } from "@/components/ui/json-block";
 import { KyronToolRunner } from "@/features/kyron-mcp/components/kyron-tool-runner";
+import { filterKyronTools, groupKyronTools, QA_USE_LABELS } from "@/features/kyron-mcp/tool-groups";
 import { cn } from "@/lib/utils";
 import type { KyronMcpCapabilityManifest, KyronMcpToolSummary } from "@/types/api";
 
@@ -29,6 +31,8 @@ export function KyronToolExplorer() {
   const [state, setState] = useState<ManifestState>({ status: "loading" });
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [query, setQuery] = useState("");
+  const [usedByQa, setUsedByQa] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -62,9 +66,11 @@ export function KyronToolExplorer() {
   }
 
   const manifest = state.status === "ready" ? state.manifest : null;
+  const visible = manifest ? filterKyronTools(manifest.tools, { query, usedByQa }) : [];
+  // Without a selection, show the first tool of the grouped list.
   const selectedTool =
-    manifest?.tools.find((tool) => tool.name === selectedName) ??
-    manifest?.tools[0] ??
+    visible.find((tool) => tool.name === selectedName) ??
+    groupKyronTools(visible)[0]?.tools[0] ??
     null;
 
   return (
@@ -72,8 +78,8 @@ export function KyronToolExplorer() {
       <CardHeader>
         <CardTitle>Kyron MCP tools</CardTitle>
         <CardDescription>
-          Everything Kyron exposes to this account. Only tools marked read-only
-          can be run here.
+          Everything Kyron exposes to this account, grouped by area. Only tools
+          marked read-only can be run here.
         </CardDescription>
         <CardAction className="flex gap-2">
           <Button
@@ -102,14 +108,29 @@ export function KyronToolExplorer() {
         {manifest ? (
           <>
             <ServerSummary manifest={manifest} />
-            {manifest.tools.length === 0 ? (
-              <InlineNotice>Kyron returned no tools for this account.</InlineNotice>
+            <GroupOverview tools={manifest.tools} />
+            <div className="flex flex-wrap items-center gap-3">
+              <Input
+                aria-label="Search tools"
+                className="w-64"
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search tools"
+                value={query}
+              />
+              <label className="flex items-center gap-2 text-sm">
+                <input checked={usedByQa} onChange={(event) => setUsedByQa(event.target.checked)} type="checkbox" />
+                Used by QA only
+              </label>
+              <span className="text-sm text-muted-foreground">{visible.length} shown</span>
+            </div>
+            {visible.length === 0 ? (
+              <InlineNotice>No tools match.</InlineNotice>
             ) : (
-              <div className="grid gap-4 lg:grid-cols-[minmax(14rem,18rem)_1fr]">
+              <div className="grid gap-4 lg:grid-cols-[minmax(16rem,20rem)_1fr]">
                 <ToolList
                   onSelect={setSelectedName}
                   selectedName={selectedTool?.name ?? null}
-                  tools={manifest.tools}
+                  tools={visible}
                 />
                 {selectedTool ? <ToolDetail key={selectedTool.name} tool={selectedTool} /> : null}
               </div>
@@ -145,6 +166,24 @@ function ServerSummary({ manifest }: { manifest: KyronMcpCapabilityManifest }) {
   );
 }
 
+// One row per area: how many tools, how many only read, how many QA uses.
+function GroupOverview({ tools }: { tools: KyronMcpToolSummary[] }) {
+  return (
+    <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+      {groupKyronTools(tools).map((group) => (
+        <li className="grid gap-1 rounded-lg border border-border/80 p-3 text-sm" key={group.id}>
+          <span className="font-medium">{group.label}</span>
+          <span className="text-xs text-muted-foreground">{group.description}</span>
+          <span className="text-xs">
+            {group.tools.length} tools · {group.tools.filter((tool) => tool.explorerAllowed).length} read-only ·{" "}
+            {group.tools.filter((tool) => tool.qaUse !== null).length} used by QA
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function ToolList({
   onSelect,
   selectedName,
@@ -155,27 +194,49 @@ function ToolList({
   tools: KyronMcpToolSummary[];
 }) {
   return (
-    <ul aria-label="Kyron tools" className="grid max-h-[32rem] content-start gap-1 overflow-auto">
-      {tools.map((tool) => (
-        <li key={tool.name}>
-          <button
-            aria-current={tool.name === selectedName ? "true" : undefined}
-            className={cn(
-              "grid w-full gap-1 rounded-lg px-3 py-2 text-left text-sm",
-              tool.name === selectedName
-                ? "bg-accent text-foreground"
-                : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
-            )}
-            onClick={() => onSelect(tool.name)}
-            type="button"
-          >
-            <span className="truncate font-mono text-xs">{tool.name}</span>
-            <ToolAccessBadge tool={tool} />
-          </button>
-        </li>
+    <div aria-label="Kyron tools" className="grid max-h-[36rem] content-start gap-3 overflow-auto">
+      {groupKyronTools(tools).map((group) => (
+        <section className="grid gap-1" key={group.id}>
+          <h3 className="px-3 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+            {group.label} ({group.tools.length})
+          </h3>
+          <ul className="grid gap-1">
+            {group.tools.map((tool) => (
+              <li key={tool.name}>
+                <button
+                  aria-current={tool.name === selectedName ? "true" : undefined}
+                  className={cn(
+                    "grid w-full gap-1 rounded-lg px-3 py-2 text-left text-sm",
+                    tool.name === selectedName
+                      ? "bg-accent text-foreground"
+                      : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
+                  )}
+                  onClick={() => onSelect(tool.name)}
+                  type="button"
+                >
+                  <span className="truncate font-mono text-xs">{tool.name}</span>
+                  <span className="flex flex-wrap gap-1">
+                    <ToolAccessBadge tool={tool} />
+                    <QaUseBadge tool={tool} />
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
       ))}
-    </ul>
+    </div>
   );
+}
+
+function QaUseBadge({ tool }: { tool: KyronMcpToolSummary }) {
+  if (!tool.qaUse) {
+    return null;
+  }
+
+  const { label, variant } = QA_USE_LABELS[tool.qaUse];
+
+  return <Badge variant={variant}>{label}</Badge>;
 }
 
 function ToolDetail({ tool }: { tool: KyronMcpToolSummary }) {
@@ -186,6 +247,7 @@ function ToolDetail({ tool }: { tool: KyronMcpToolSummary }) {
         {tool.title ? <p className="text-sm">{tool.title}</p> : null}
         <div className="flex flex-wrap gap-1.5">
           <ToolAccessBadge tool={tool} />
+          <QaUseBadge tool={tool} />
           {tool.annotations?.destructiveHint ? (
             <Badge variant="destructive">Destructive</Badge>
           ) : null}

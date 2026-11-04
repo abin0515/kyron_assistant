@@ -208,7 +208,7 @@ export function validateRevisions(
 // Setup findings may change the field they name. Lesson findings may change
 // the writable fields of their activity, scenes and vocabulary included;
 // answer keys only when a finding is about the answer key. Lesson-wide
-// findings may propose lesson settings, which always need approval.
+// findings may change lesson settings.
 export function editableFields(
   snapshot: QaLessonSnapshot,
   target: QaRunTarget,
@@ -332,6 +332,8 @@ function renderFinding(shortId: string, finding: QaFinding): string {
     `  Problem: ${finding.rationale}`,
     ...finding.evidence.map((item) => `  Evidence (${item.label}): ${item.quote}`),
     hint ? `  Suggested value from the check: ${hint}` : null,
+    // Set when the verifier undid the previous attempt; avoid repeating it.
+    finding.status === "open" && finding.escalationReason ? `  Previous attempt: ${finding.escalationReason}` : null,
   ]
     .filter(Boolean)
     .join("\n");
