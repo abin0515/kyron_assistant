@@ -188,6 +188,24 @@ describe("revision validation", () => {
   });
 });
 
+describe("lesson-wide findings", () => {
+  it("may propose lesson settings, which always need approval", () => {
+    const findings = [finding("f1", null, "lesson.audience")];
+    const context = {
+      snapshot: lessonSnapshot,
+      target: "lesson" as const,
+      findings,
+      allowedFields: new Set(editableFields(lessonSnapshot, "lesson", findings)),
+    };
+
+    expect([...context.allowedFields]).toEqual([fieldKey(null, "lesson.title"), fieldKey(null, "lesson.audience"), fieldKey(null, "lesson.objective")]);
+    expect(validateRevisions([raw(["f1"], null, "lesson.audience", "Engineers new to PDEs")], context).revisions[0]).toMatchObject({
+      currentValue: "Engineers",
+      protectedField: true,
+    });
+  });
+});
+
 describe("revision agent", () => {
   it("uses the revision model, maps short ids back and leaves locked fields out", async () => {
     const findings = [finding("finding-a", "intro", "narration"), finding("finding-b", "intro", "onScreenText")];
@@ -218,7 +236,7 @@ describe("revision agent", () => {
 
   it("does not call the model when no finding names an editable field", async () => {
     const result = await reviseContent({
-      findings: [finding("f1", null, "lesson.learningObjectives")],
+      findings: [finding("f1", "missing-activity", "narration")],
       snapshot: lessonSnapshot,
       target: "lesson",
     });

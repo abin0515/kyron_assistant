@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 
 import { logEvent } from "@/server/logging/writer";
 import type {
+  QaActivity,
   QaContentChange,
   QaContentVersionDetail,
   QaLesson,
@@ -16,7 +17,12 @@ import type {
 import { isSetupFieldPath, readSetupField, SETUP_FIELD_PATHS, writeSetupField } from "./course-setup-fields";
 import { getLatestAppliedVersion, insertContentVersion } from "./repository";
 import { REVISION_AGENT_NAME, type Revision } from "./revision-agent";
-import { PATCHABLE_ACTIVITY_FIELDS, readActivityField, writeActivityField } from "./snapshot";
+import {
+  PATCHABLE_ACTIVITY_FIELDS,
+  readActivityField,
+  writeActivityField,
+  writeLessonField,
+} from "./snapshot";
 import type { StoredQaRun } from "./types";
 
 type VersionRun = Pick<StoredQaRun, "id" | "target" | "source" | "createdBy" | "findings" | "workspaceId">;
@@ -39,19 +45,22 @@ export async function recordReadVersion({
     return null;
   }
 
-  const changes = latest ? diffContent(latest.content, content, run.target) : [];
+  // Content from another source (a pasted copy before Kyron was connected)
+  // is not an earlier state of this content, so nothing is diffed against it.
+  const comparable = latest?.source === run.source ? latest : null;
+  const changes = comparable ? diffContent(comparable.content, content, run.target) : [];
 
   return saveVersion({
     lesson,
     run,
     parent: latest,
     status: "applied",
-    author: readAuthor(run, latest !== null),
+    author: readAuthor(run, latest),
     model: null,
     content,
     changes,
-    summary: latest
-      ? `${changes.length} field(s) changed outside the QA agent since v${latest.versionNumber}.`
+    summary: comparable
+      ? `${changes.length} field(s) changed outside the QA agent since v${comparable.versionNumber}.`
       : firstReadSummary(run),
   });
 }
@@ -188,14 +197,15 @@ async function saveVersion({
   return version;
 }
 
-function readAuthor(run: VersionRun, hasEarlierVersion: boolean): string {
+function readAuthor(run: VersionRun, latest: QaContentVersionDetail | null): string {
   switch (run.source) {
     case "manual":
       return `Pasted by ${run.createdBy}`;
     case "kyron_mcp":
-      return hasEarlierVersion ? "Changed in Kyron outside the QA agent" : "Kyron generation";
+      // A first read after a pasted copy is still Kyron's own generation.
+      return latest?.source === "kyron_mcp" ? "Changed in Kyron outside the QA agent" : "Kyron generation";
     case "workspace_setup":
-      return hasEarlierVersion ? "Edited in the workspace" : "Workspace course setup";
+      return latest ? "Edited in the workspace" : "Workspace course setup";
   }
 }
 
@@ -235,7 +245,9 @@ function applyRevisions(content: QaVersionContent, revisions: Revision[]): QaVer
     (current, revision) =>
       isSetupFieldPath(revision.fieldPath)
         ? { ...current, lesson: writeSetupField(current.lesson, revision.fieldPath, revision.proposedValue) }
-        : {
+        : revision.fieldPath.startsWith("lesson.")
+          ? { ...current, lesson: writeLessonField(current.lesson, revision.fieldPath, revision.proposedValue) }
+          : {
             ...current,
             activities: current.activities.map((activity) =>
               activity.id === revision.activityId
@@ -277,7 +289,7 @@ function diffContent(
       return [change(activity.id, "activity", null, "Added")];
     }
 
-    return PATCHABLE_ACTIVITY_FIELDS.flatMap((fieldPath) => {
+    return [...new Set([...diffFieldPaths(earlier), ...diffFieldPaths(activity)])].flatMap((fieldPath) => {
       const from = readActivityField(earlier, fieldPath);
       const to = readActivityField(activity, fieldPath);
 
@@ -289,6 +301,15 @@ function diffContent(
     .map((activity) => change(activity.id, "activity", "Present", "Removed"));
 
   return [...lessonChanges, ...activityChanges, ...removed];
+}
+
+// Every text field of an activity, scenes and vocabulary terms included.
+function diffFieldPaths(activity: QaActivity): string[] {
+  return [
+    ...PATCHABLE_ACTIVITY_FIELDS,
+    ...(activity.scenes ?? []).flatMap((scene) => ["narration", "title", "onScreenText"].map((field) => `scenes.${scene.id}.${field}`)),
+    ...(activity.terms ?? []).flatMap((term) => [`vocabulary.${term.id}.term`, `vocabulary.${term.id}.definition`]),
+  ];
 }
 
 function lessonFieldLabel(fieldPath: (typeof SETUP_FIELD_PATHS)[number], target: QaRunTarget): string {

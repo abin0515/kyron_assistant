@@ -121,8 +121,12 @@ export function createInMemoryQaRepository() {
 
       return { run: clone(claimed), leaseToken };
     },
-    async releaseRun(id: string, leaseToken: string, mutate: (run: StoredQaRun) => StoredQaRun) {
-      return updateRun(id, (run) => (run.lease?.token === leaseToken ? { ...mutate(run), lease: null } : null));
+    async releaseRun(id: string, leaseToken: string, mutate: (run: StoredQaRun) => StoredQaRun, waitMs = 0) {
+      return updateRun(id, (run) =>
+        run.lease?.token === leaseToken
+          ? { ...mutate(run), lease: waitMs > 0 ? { token: randomUUID(), expiresAt: Date.now() + waitMs } : null }
+          : null,
+      );
     },
     async getRubricApproval(domain: string, version: string) {
       return approvals.get(`${domain}-${version}`) ?? null;

@@ -9,6 +9,7 @@ import {
 import { paginationMeta, type PageRequest } from "@/server/http/pagination";
 import type { CurrentUser } from "@/server/identity/current-user";
 import { logEvent } from "@/server/logging/writer";
+import { ensureProductionJob } from "@/server/production/service";
 import type {
   DraftWorkspace,
   QaAuditRequest,
@@ -28,7 +29,8 @@ import type {
   QaWorkspaceQaResponse,
 } from "@/types/api";
 
-import { getContentSource } from "./content-sources";
+import { resolveContentSource } from "./content-sources";
+import { recordDefect } from "./defects";
 import { processNextStep, startQaRun } from "./pipeline";
 import {
   findLessonByWorkspace,
@@ -124,7 +126,7 @@ export async function assertSetupReadyForSubmission({
   workspace: DraftWorkspace;
 }): Promise<void> {
   const lesson = await ensureWorkspaceLesson(workspace);
-  const currentHash = hashPacket(await getContentSource("workspace_setup").readLesson(lesson));
+  const currentHash = hashPacket(await (await resolveContentSource("workspace_setup", lesson)).readLesson(lesson));
   let run = await getLatestWorkspaceRun(workspace.id, "course_setup");
   const checkedHash = run?.snapshotId ? (await getSnapshot(run.snapshotId))?.contentHash : null;
 
@@ -186,6 +188,8 @@ export async function queueQaForCompletedDraft(draft: { id: number }): Promise<v
   if (!workspace) {
     return;
   }
+
+  await ensureProductionJob({ ownerId: owner.ownerId, title: workspace.name, workspaceId: workspace.id });
 
   const existing = await getLatestWorkspaceRun(workspace.id, "lesson");
 
@@ -338,7 +342,9 @@ export async function decideFinding(
   { outcome, reason }: QaFindingDecisionRequest,
   user: CurrentUser,
 ): Promise<QaRunDetailResponse> {
-  const writable = getContentSource((await requireVisibleRun(runId, user)).source).writable;
+  const visible = await requireVisibleRun(runId, user);
+  const visibleLesson = await getLesson(visible.lessonId);
+  const writable = visibleLesson ? (await resolveContentSource(visible.source, visibleLesson)).writable : false;
 
   await updateRunOrThrow(runId, (run) => {
     const finding = run.findings.find((candidate) => candidate.id === findingId);
@@ -367,6 +373,26 @@ export async function decideFinding(
       `${user.name} ${outcome} ${finding.criterionId}${reason ? `: ${reason.replace(/[.\s]+$/, "")}` : ""}.`,
     );
   });
+
+  // A finding a reviewer rejects as wrong is a false alarm for the testing set.
+  const rejected = visible.findings.find((finding) => finding.id === findingId);
+
+  if (outcome === "rejected" && rejected) {
+    await recordDefect({
+      workspaceId: visible.workspaceId,
+      runId,
+      findingId,
+      stage: visible.target === "course_setup" ? "setup" : rejected.evaluator === "media" ? "video" : "lesson",
+      category: "false_alarm",
+      severity: rejected.severity,
+      origin: "rejected_finding",
+      title: `Rejected finding: ${rejected.criterionId}${rejected.activityId ? ` in ${rejected.activityId}` : ""}`,
+      expected: "No finding.",
+      actual: rejected.rationale,
+      evidence: reason,
+      createdBy: user.name,
+    });
+  }
 
   return getRunDetail(runId, user);
 }
@@ -427,6 +453,26 @@ export async function recordAudit(
       `${user.name} audited the run: ${outcome === "pass" ? "no defects" : "defect found"}.`,
     ),
   );
+
+  // A defect found in a run QA passed is a miss for the testing set.
+  if (outcome === "defect_found") {
+    const run = await requireVisibleRun(runId, user);
+
+    await recordDefect({
+      workspaceId: run.workspaceId,
+      runId,
+      findingId: null,
+      stage: run.target === "course_setup" ? "setup" : "lesson",
+      category: "qa_missed",
+      severity: "major",
+      origin: "audit",
+      title: `Audit found a defect QA passed (${run.target === "course_setup" ? "setup" : "lesson"})`,
+      expected: "QA reports the defect.",
+      actual: `Run finished as ${run.stage}.`,
+      evidence: note,
+      createdBy: user.name,
+    });
+  }
 
   return getRunDetail(runId, user);
 }
@@ -572,6 +618,8 @@ async function startSetupQa({
     return null;
   }
 
+  await ensureProductionJob({ ownerId, title: workspace.name, workspaceId });
+
   const active = await getLatestWorkspaceRun(workspaceId, "course_setup");
 
   if (active && active.pendingSteps.length > 0) {
@@ -648,7 +696,7 @@ async function toDetail(run: StoredQaRun): Promise<QaRunDetailResponse> {
     run: toPublicRun(run),
     lesson,
     snapshot,
-    contentWritable: getContentSource(run.source).writable,
+    contentWritable: (await resolveContentSource(run.source, lesson)).writable,
     pendingStepCount: run.pendingSteps.length,
     criteria: rubric.criteria.filter((criterion) => criterion.target === run.target),
     versions: versions.items,

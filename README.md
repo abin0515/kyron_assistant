@@ -66,6 +66,14 @@ Tokens are encrypted with `TOKEN_ENCRYPTION_KEY` and stored in
 `.data/kyron-oauth.json`, which is git-ignored. The tool explorer lists every
 Kyron MCP tool and runs only tools that Kyron marks read-only.
 
+Kyron rejects a client file served as plain text: GitHub's raw gist address
+returns `text/plain`, so serve the same gist through a JSON-serving mirror (for
+example `https://gist.githack.com/USER/GIST_ID/raw/kyron-client.json`) or
+GitHub Pages, and use that address as both `client_id` and
+`KYRON_OAUTH_CLIENT_ID`. The app asks for `read write`; choose **Reconnect**
+after upgrading so QA can write fixes. `QA_KYRON_WRITES` (default `test-only`)
+and `QA_KYRON_VIDEO` (default `off`) control what QA may change.
+
 ### QA agent
 
 Quality checks run inside generation: generating a course setup checks it
@@ -76,10 +84,13 @@ checks** on each workspace page, across workspaces under **QA agent**, and costs
 and every content version (before/after per field) under **Logs**. See
 [docs/QA_AGENT_PLAN.md](docs/QA_AGENT_PLAN.md).
 
-Optionally run `npm run qa:worker` in a second terminal (uses `CRON_SECRET`)
-so checks that outlast a request keep going without an open page.
+Run `npm run qa:worker` in a second terminal (uses `CRON_SECRET`). It is the
+production scheduler: it polls Kyron drafts that are still generating, advances
+QA runs and updates each course's production job, so nothing depends on an
+open page. **QA agent → Production** shows every course; **QA agent →
+Defects** is the defect library.
 
-The QA, content-version and log tables are migrations `100`–`120`. On a database shared with
+The QA, content-version, log, production-job and defect tables are migrations `100`–`125`. On a database shared with
 other branches, apply only those files instead of `npm run db:migrate`, which
 re-runs every migration:
 
@@ -99,7 +110,7 @@ node --env-file=.env.local -e "const fs=require('fs');const {neon}=require('@neo
 ## Main routes
 
 - `/sign-in`: access-code or Clerk sign-in, depending on `AUTH_MODE`
-- `/qa`: QA agent lessons, runs, escalations and rubrics
+- `/qa`: QA agent checks, production jobs (`/qa/production`), escalations, defects (`/qa/defects`) and rubrics
 - `/kyron`: admin Kyron MCP connection and tool explorer
 - `/drafts`: workspace management and status filters
 - `/drafts/new`: create an autosaved workspace

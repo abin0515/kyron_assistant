@@ -15,6 +15,7 @@ export type QaStep =
   | { kind: "check"; evaluator: ScriptEvaluatorId; activityIds: string[] | null }
   | { kind: "decide" }
   | { kind: "revise" }
+  | { kind: "verify" }
   | { kind: "recheck" }
   | { kind: "video_request" }
   | { kind: "video_poll"; attempt: number }
@@ -30,6 +31,18 @@ export type StoredQaRun = QaRun & {
   patchedFields: Array<{ activityId: string; fieldPath: string }>;
   videoJobId: string | null;
   mediaFilePath: string | null;
+  // Changes written by the last revision round, waiting for the verifier.
+  unverifiedChanges?: AppliedChange[];
+  // Video renders requested for this run (at most two: render and re-render).
+  videoRequests?: number;
+};
+
+export type AppliedChange = {
+  activityId: string | null;
+  fieldPath: string;
+  before: string | null;
+  after: string;
+  findingIds: string[];
 };
 
 export type LessonPacket = {

@@ -206,8 +206,9 @@ export function validateRevisions(
 }
 
 // Setup findings may change the field they name. Lesson findings may change
-// the field they name and the other text fields of the same activity; answer
-// keys only when a finding is about the answer key.
+// the writable fields of their activity, scenes and vocabulary included;
+// answer keys only when a finding is about the answer key. Lesson-wide
+// findings may propose lesson settings, which always need approval.
 export function editableFields(
   snapshot: QaLessonSnapshot,
   target: QaRunTarget,
@@ -224,18 +225,21 @@ export function editableFields(
       continue;
     }
 
-    const activity = snapshot.activities.find((candidate) => candidate.id === finding.activityId);
+    if (finding.activityId === null) {
+      for (const fieldPath of LESSON_FIELD_PATHS) {
+        if (readLessonField(snapshot.lesson, fieldPath) !== null) {
+          keys.add(fieldKey(null, fieldPath));
+        }
+      }
 
-    if (!activity) {
       continue;
     }
 
-    for (const fieldPath of PATCHABLE_ACTIVITY_FIELDS) {
-      const named = fieldPath === finding.fieldPath;
-      const related = fieldPath !== "question.answerKey" && readActivityField(activity, fieldPath) !== null;
+    const activity = snapshot.activities.find((candidate) => candidate.id === finding.activityId);
 
-      if (named || related) {
-        keys.add(fieldKey(activity.id, fieldPath));
+    for (const fieldPath of activity ? activityFieldPaths(activity) : []) {
+      if (fieldPath !== "question.answerKey" || fieldPath === finding.fieldPath) {
+        keys.add(fieldKey(finding.activityId, fieldPath));
       }
     }
   }
@@ -257,7 +261,20 @@ function currentFieldValue(
     return isSetupFieldPath(fieldPath) ? readSetupField(snapshot.lesson, fieldPath) ?? "" : null;
   }
 
-  return activity ? readActivityField(activity, fieldPath) : null;
+  if (activity) {
+    return readActivityField(activity, fieldPath);
+  }
+
+  return fieldPath.startsWith("lesson.") ? readLessonField(snapshot.lesson, fieldPath) : null;
+}
+
+function renderLessonForRevision(snapshot: QaLessonSnapshot): string {
+  return [
+    "<<<LESSON CONTENT (untrusted)",
+    ...LESSON_FIELD_PATHS.map((fieldPath) => `${fieldPath}: ${readLessonField(snapshot.lesson, fieldPath) ?? "(empty)"}`),
+    ...snapshot.activities.map((activity) => renderActivity(activity, true, true)),
+    "LESSON CONTENT END>>>",
+  ].join("\n\n");
 }
 
 function valueProblem({
@@ -381,4 +398,11 @@ function parseRevisionOutput(
         }
       : null;
   });
-  const u
+  const unresolved = parseItems(value, "unresolved", (record) => {
+    const findingId = readString(record, "findingId");
+
+    return findingId ? { findingId, reason: readString(record, "reason") ?? "" } : null;
+  });
+
+  return revisions && unresolved ? { revisions, unresolved } : null;
+}

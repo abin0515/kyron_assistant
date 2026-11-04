@@ -3,6 +3,7 @@ import "server-only";
 import path from "node:path";
 
 import { runWithLogContext } from "@/server/logging/context";
+import { courseBudgetProblem } from "@/server/production/service";
 import { logEvent } from "@/server/logging/writer";
 import type {
   QaContentSourceKind,
@@ -15,7 +16,7 @@ import type {
 
 import {
   ContentSourceUnavailableError,
-  getContentSource,
+  resolveContentSource,
   type LessonContentSource,
 } from "./content-sources";
 import {
@@ -60,6 +61,7 @@ import {
   type RevisionResult,
 } from "./revision-agent";
 import { getRubricPack } from "./rubrics";
+import { VERIFIER_NAME, verifyChanges } from "./verifier";
 import {
   addUsage,
   appendEvent,
@@ -75,15 +77,22 @@ import { transcribeMedia } from "./transcription";
 import type { QaStep, ScriptEvaluatorId, StoredQaRun } from "./types";
 
 const MAX_STEP_FAILURES = 2;
-const MAX_VIDEO_POLLS = 240;
+const MAX_VIDEO_POLLS = 120;
+// Rendering takes minutes, so the run sleeps between status checks.
+const DEFAULT_VIDEO_POLL_MS = 30_000;
+// The first render plus one re-render after fixing the narration.
+const MAX_VIDEO_RENDERS = 2;
 const DRIVER_BATCH_SIZE = 2;
 const MAX_TRANSCRIPT_STORED = 50_000;
 const AGENT_NAME = "QA agent";
+const VERDICT_ORDER = ["resolves", "partial", "does_not_resolve", "introduces_error"] as const;
 
-// "retry" keeps the step at the head of the queue for the next tick.
+// "retry" keeps the step at the head of the queue for the next tick;
+// waitMs keeps any caller from picking the run up again until then.
 type StepResult = {
   next: QaStep[] | "retry";
   update: (run: StoredQaRun) => StoredQaRun;
+  waitMs?: number;
 };
 
 type RevisionFailure = { revision: Revision; message: string };
@@ -153,7 +162,7 @@ export async function processNextStep(runId: string): Promise<StoredQaRun | null
         result = stepFailure(run, step, error);
       }
 
-      const released = await releaseRun(runId, leaseToken, (fresh) => applyStepResult(fresh, result));
+      const released = await releaseRun(runId, leaseToken, (fresh) => applyStepResult(fresh, result), result.waitMs);
 
       if (released) {
         await logStep(step, released, released.events.slice(run.events.length), Date.now() - startedAt);
@@ -179,12 +188,18 @@ async function executeStep(run: StoredQaRun, step: QaStep): Promise<StepResult> 
     throw new ContentSourceUnavailableError("The QA lesson record is missing.");
   }
 
-  const source = getContentSource(run.source);
+  const source = await resolveContentSource(run.source, lesson);
 
   if (usesModel(step) && totalTokens(run.usage) >= run.tokenBudget) {
     return blocked(
       `The run reached its token budget (${run.tokenBudget.toLocaleString()} tokens). Raise QA_RUN_TOKEN_BUDGET or re-run.`,
     );
+  }
+
+  const overBudget = usesModel(step) && run.workspaceId ? await courseBudgetProblem(run.workspaceId) : null;
+
+  if (overBudget) {
+    return blocked(overBudget);
   }
 
   switch (step.kind) {
@@ -196,10 +211,12 @@ async function executeStep(run: StoredQaRun, step: QaStep): Promise<StepResult> 
       return decideStep(run, source);
     case "revise":
       return reviseStep(run, lesson, source);
+    case "verify":
+      return verifyStep(run, lesson, source);
     case "recheck":
       return recheckStep(run);
     case "video_request":
-      return videoRequestStep(lesson, source);
+      return videoRequestStep(run, lesson, source);
     case "video_poll":
       return videoPollStep(run, step.attempt, lesson, source);
     case "media_check":
@@ -288,8 +305,36 @@ function decideStep(run: StoredQaRun, source: LessonContentSource): StepResult {
           `${exhausted.length} finding(s) escalated after ${MAX_REPAIR_ATTEMPTS} fix attempts.`,
         );
 
-  if (candidates.ready.length > 0) {
+  if (candidates.ready.some((finding) => finding.evaluator !== "media")) {
     return { next: [{ kind: "revise" }, { kind: "recheck" }], update: escalateExhausted };
+  }
+
+  const narrationOpen = unresolved.filter((finding) => finding.evaluator === "media");
+
+  // The video does not say what the approved script says: adjust the scene
+  // narration where it helps, then render again. One re-render at most.
+  if (narrationOpen.length > 0 && source.supportsVideo) {
+    if ((run.videoRequests ?? 0) < MAX_VIDEO_RENDERS) {
+      return {
+        next: [{ kind: "revise" }, { kind: "video_request" }],
+        update: (current) =>
+          appendEvent(escalateExhausted(current), "warn", "The video narration differs from the script; fixing and rendering again."),
+      };
+    }
+
+    return {
+      next: [{ kind: "finalize" }],
+      update: (current) =>
+        appendEvent(
+          updateFindings(escalateExhausted(current), narrationOpen.map((finding) => finding.id), (finding) => ({
+            ...finding,
+            status: "escalated",
+            escalationReason: "The video narration still differs from the script after a re-render.",
+          })),
+          "warn",
+          "Escalated narration problems after a re-render.",
+        ),
+    };
   }
 
   const readyForVideo =
@@ -407,7 +452,7 @@ async function reviseStep(
   }
 
   return {
-    next: [],
+    next: applied.length > 0 ? [{ kind: "verify" }] : [],
     update: (current) => {
       const revised = addUsage(
         {
@@ -415,6 +460,13 @@ async function reviseStep(
             applyOutcome(finding, outcomes.get(finding.id)),
           ),
           snapshotId: after?.id ?? current.snapshotId,
+          unverifiedChanges: applied.map((revision) => ({
+            activityId: revision.activityId,
+            fieldPath: revision.fieldPath,
+            before: revision.currentValue,
+            after: revision.proposedValue,
+            findingIds: revision.findingIds,
+          })),
           patchedFields: [
             ...current.patchedFields,
             ...applied.map((revision) => ({ activityId: revision.activityId ?? "", fieldPath: revision.fieldPath })),
@@ -424,6 +476,74 @@ async function reviseStep(
       );
 
       return messages.reduce((next, { level, message }) => appendEvent(next, level, message), revised);
+    },
+  };
+}
+
+// An independent check of the changes just written. A change judged to
+// introduce an error is undone and its findings go to a person.
+async function verifyStep(run: StoredQaRun, lesson: QaLesson, source: LessonContentSource): Promise<StepResult> {
+  const changes = run.unverifiedChanges ?? [];
+
+  if (changes.length === 0) {
+    return { next: [], update: (current) => current };
+  }
+
+  const snapshot = await requireSnapshot(run.snapshotId);
+  const { usage, verdicts } = await verifyChanges({ changes, findings: run.findings, snapshot });
+  const verdictFor = (index: number) => verdicts.find((verdict) => verdict.index === index);
+  const harmful = changes.flatMap((change, index) =>
+    verdictFor(index)?.verdict === "introduces_error" ? [{ change, explanation: verdictFor(index)?.explanation ?? "" }] : [],
+  );
+  const reverted: Revision[] = [];
+
+  for (const { change, explanation } of harmful) {
+    const undo: Revision = {
+      findingIds: change.findingIds,
+      activityId: change.activityId,
+      fieldPath: change.fieldPath,
+      currentValue: change.after,
+      proposedValue: change.before ?? "",
+      rationale: `Reverted by the ${VERIFIER_NAME}: ${explanation}`,
+      protectedField: false,
+    };
+
+    if (change.before && (await applyPatch(source, lesson, undo)).status === "applied") {
+      reverted.push(undo);
+    }
+  }
+
+  const after = reverted.length > 0 ? await readLessonSnapshot(lesson, source) : null;
+  const version = after
+    ? await recordRevisionVersion({ author: VERIFIER_NAME, lesson, model: null, revisions: reverted, run, snapshot: after })
+    : null;
+  const escalate = new Map(
+    harmful.flatMap(({ change, explanation }) =>
+      change.findingIds.map((findingId) => [findingId, `The independent check rejected the fix: ${explanation}`] as const),
+    ),
+  );
+  const summary = VERDICT_ORDER.map((name) => `${verdicts.filter((verdict) => verdict.verdict === name).length} ${name.replace(/_/g, " ")}`).join(", ");
+
+  return {
+    next: [],
+    update: (current) => {
+      const checked = addUsage(
+        {
+          ...updateFindings(current, [...escalate.keys()], (finding) => ({
+            ...finding,
+            status: "escalated",
+            escalationReason: escalate.get(finding.id) ?? finding.escalationReason,
+          })),
+          snapshotId: after?.id ?? current.snapshotId,
+          unverifiedChanges: [],
+        },
+        [usage],
+      );
+      const noted = appendEvent(checked, harmful.length > 0 ? "warn" : "info", `${VERIFIER_NAME}: ${summary}.`);
+
+      return version
+        ? appendEvent(noted, "warn", `Reverted ${reverted.length} change(s) the ${VERIFIER_NAME} rejected. Saved as content v${version.versionNumber}.`)
+        : noted;
     },
   };
 }
@@ -452,15 +572,22 @@ function recheckStep(run: StoredQaRun): StepResult {
 }
 
 async function videoRequestStep(
+  run: StoredQaRun,
   lesson: QaLesson,
   source: LessonContentSource,
 ): Promise<StepResult> {
   const jobId = await source.requestVideo(lesson);
+  const renders = (run.videoRequests ?? 0) + 1;
 
   return {
     next: [{ kind: "video_poll", attempt: 1 }],
+    waitMs: videoPollIntervalMs(),
     update: (current) =>
-      appendEvent({ ...current, videoJobId: jobId }, "info", "Requested video generation in Kyron."),
+      appendEvent(
+        { ...current, videoJobId: jobId, videoRequests: renders, media: null, mediaFilePath: null },
+        "info",
+        renders > 1 ? "Requested a re-render of the lesson video in Kyron." : "Requested video generation in Kyron.",
+      ),
   };
 }
 
@@ -475,11 +602,40 @@ async function videoPollStep(
   if (status === "pending") {
     return attempt >= MAX_VIDEO_POLLS
       ? mediaFailed("Video generation did not finish in time.")
-      : { next: [{ kind: "video_poll", attempt: attempt + 1 }], update: (current) => current };
+      : {
+          next: [{ kind: "video_poll", attempt: attempt + 1 }],
+          update: (current) => current,
+          waitMs: videoPollIntervalMs(),
+        };
   }
 
   if (status === "failed") {
     return mediaFailed("Kyron reported that video generation failed.");
+  }
+
+  if (source.readRenderedNarration) {
+    const transcript = (await source.readRenderedNarration(lesson)).slice(0, MAX_TRANSCRIPT_STORED);
+
+    return {
+      next: [{ kind: "media_check" }],
+      update: (current) =>
+        appendEvent(
+          {
+            ...current,
+            mediaFilePath: null,
+            media: {
+              fileName: "Kyron captions",
+              byteSize: transcript.length,
+              source: "kyron_mcp",
+              status: "pending",
+              transcript,
+              message: null,
+            },
+          },
+          "info",
+          "Video rendered; checking its narration through Kyron's captions.",
+        ),
+    };
   }
 
   const video = await source.downloadVideo(lesson, run.videoJobId ?? "");
@@ -508,15 +664,15 @@ async function videoPollStep(
 }
 
 async function mediaCheckStep(run: StoredQaRun): Promise<StepResult> {
-  if (!run.mediaFilePath || !run.media) {
+  if (!run.media || (!run.mediaFilePath && run.media.transcript === null)) {
     return mediaFailed("No video or audio file is attached.");
   }
 
   const snapshot = await requireSnapshot(run.snapshotId);
-  const transcription = await transcribeMedia(
-    await readMediaFile(run.mediaFilePath),
-    path.basename(run.mediaFilePath),
-  );
+  // Captions from the renderer are already text; uploaded files are transcribed.
+  const transcription = run.mediaFilePath
+    ? await transcribeMedia(await readMediaFile(run.mediaFilePath), path.basename(run.mediaFilePath))
+    : { text: run.media.transcript ?? "", usage: null };
   const output = await evaluateNarrationMatch(snapshot, transcription.text);
 
   return {
@@ -533,7 +689,7 @@ async function mediaCheckStep(run: StoredQaRun): Promise<StepResult> {
               message: null,
             },
           },
-          [transcription.usage, ...output.usage],
+          [...(transcription.usage ? [transcription.usage] : []), ...output.usage],
         ),
         "info",
         describeEvaluation("media", output),
@@ -614,10 +770,10 @@ function stepFailure(run: StoredQaRun, step: QaStep, error: unknown): StepResult
       return {
         next: [],
         update: (current) => {
-          const { ready } = revisionCandidates(current, getContentSource(current.source).writable);
+          const unresolved = current.findings.filter(isUnresolvedBlocking).map((finding) => finding.id);
 
           return appendEvent(
-            updateFindings(current, ready.map((finding) => finding.id), (finding) => ({
+            updateFindings(current, unresolved, (finding) => ({
               ...finding,
               proposalAttempted: true,
               status: "escalated",
@@ -816,6 +972,10 @@ function revisionOutcome(
     applied: false,
   });
 
+  if (!plan && finding.evaluator === "media") {
+    return { proposedPatch: null, status: null, escalationReason: null, applied: false };
+  }
+
   if (!plan) {
     const reason = agent?.unresolved.find((item) => item.findingId === finding.id)?.reason;
 
@@ -917,6 +1077,7 @@ function usesModel(step: QaStep): boolean {
   return (
     (step.kind === "check" && step.evaluator !== "structural") ||
     step.kind === "revise" ||
+    step.kind === "verify" ||
     step.kind === "media_check"
   );
 }
@@ -931,6 +1092,8 @@ function describeStep(step: QaStep): string {
       return "Reviewing findings";
     case "revise":
       return "Revising the content";
+    case "verify":
+      return "Checking the fixes independently";
     case "recheck":
       return "Re-checking revised content";
     case "video_request":
@@ -961,6 +1124,12 @@ function versionNote(version: { versionNumber: number } | null): string {
 
 function describeFinding(finding: QaFinding): string {
   return `${finding.criterionId}${finding.activityId ? ` in ${finding.activityId}` : ""}`;
+}
+
+function videoPollIntervalMs(): number {
+  const value = Number(process.env.QA_VIDEO_POLL_MS);
+
+  return Number.isFinite(value) && value >= 0 ? value : DEFAULT_VIDEO_POLL_MS;
 }
 
 function auditRate(): number {

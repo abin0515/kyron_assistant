@@ -278,13 +278,18 @@ export async function claimRun(
   return rows[0] ? { run: toStoredRun(rows[0]), leaseToken } : null;
 }
 
+// waitMs keeps a lease on the run so no caller picks it up before then, for
+// steps that wait on outside work such as a video render.
 export async function releaseRun(
   id: string,
   leaseToken: string,
   mutate: (run: StoredQaRun) => StoredQaRun,
+  waitMs = 0,
 ): Promise<StoredQaRun | null> {
   return updateRun(id, (run) =>
-    run.lease?.token === leaseToken ? { ...mutate(run), lease: null } : null,
+    run.lease?.token === leaseToken
+      ? { ...mutate(run), lease: waitMs > 0 ? { token: randomUUID(), expiresAt: Date.now() + waitMs } : null }
+      : null,
   );
 }
 

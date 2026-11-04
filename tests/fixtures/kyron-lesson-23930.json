@@ -1,0 +1,487 @@
+{
+  "note": "Trimmed from Kyron MCP reads of draft 14826 (lesson 23930) on 2026-11-02. Links and layout HTML removed.",
+  "collection": {
+    "id": 14826,
+    "name": "[QA Test] Introduction to PDEs - MIT 18.152 Class 1",
+    "lesson_collection_status": {
+      "status_type": "done",
+      "status_message": ""
+    },
+    "draft_lesson": {
+      "id": 23930
+    }
+  },
+  "lesson": {
+    "id": 23930,
+    "name": "[QA Test] Introduction to PDEs - MIT 18.152 Class 1",
+    "description": "An introduction to partial differential equations, focusing on how to identify a PDE and classify examples by order and linearity, including examples from familiar physical models.",
+    "audience": "Working professionals in continuing education who are beginning the study of partial differential equations.",
+    "objective": "Given representative partial differential equations, classify each equation by its order and linearity.",
+    "intended_time": 900,
+    "lesson_type": "one_shot_course",
+    "lock_version": 1
+  },
+  "sections": {
+    "lesson_sections": [
+      {
+        "structured_learning_objectives": [
+          "Given representative partial differential equations, classify each equation by its order and linearity."
+        ],
+        "id": 64011,
+        "topic": "PDE Order and Linearity",
+        "lesson_id": 23930,
+        "position": 1,
+        "generate_assessment": false,
+        "enduring_understandings": [
+          "A partial differential equation must be classified by two separate features—its order and its linearity—because each one tells you something different about the equation."
+        ],
+        "essential_questions": [
+          {
+            "question": "What kinds of differences between partial differential equations still matter when two equations look similar at first glance?",
+            "cognitive_process_level": "Analyze"
+          },
+          {
+            "question": "What can be lost if you try to judge a partial differential equation by only one characteristic?",
+            "cognitive_process_level": "Evaluate"
+          },
+          {
+            "question": "Why do mathematicians sort partial differential equations by more than one structural feature instead of relying on a single overall label?",
+            "cognitive_process_level": "Analyze"
+          }
+        ],
+        "knowledge_and_misconceptions": [
+          {
+            "id": "dkwLEV6Z90RCWZhMnkkyD8p1HDSoYMaxUkQING5CCmY=",
+            "knowledge": "The order of a partial differential equation is determined by the highest-order partial derivative present in the equation, not by the number of variables or by where a term appears; for example, u_t = alpha u_xx + beta u is second-order because u_xx is the highest derivative.",
+            "misconceptions": [
+              "Confusing order and number of variables",
+              "Belief that the first written term sets the order",
+              "Treating powers of u as derivative order",
+              "Misinterpreting mixed partial derivatives as separate lower-order terms"
+            ]
+          },
+          {
+            "id": "mA1QHzpfXfrXDD07V3NF+g8NOJdrs6XymI+u/FmBVkg=",
+            "knowledge": "A PDE is linear when u and its partial derivatives appear only to the first power, are not multiplied together, and are not placed inside nonlinear functions; coefficients may depend on the independent variables, so a(x)u_x is linear while u u_x is nonlinear, and linearity is independent of order.",
+            "misconceptions": [
+              "Confusing linearity and order",
+              "Belief that variable coefficients make an equation nonlinear",
+              "Assuming any product involving u is linear",
+              "Misinterpreting nonlinear functions of u as acceptable linear terms"
+            ]
+          }
+        ],
+        "lesson_section_status": {
+          "status_type": "done",
+          "status_message": ""
+        },
+        "start_section_activity_id": 504101,
+        "has_disconnected_activities": false
+      }
+    ],
+    "meta": {
+      "current_page": 1,
+      "next_page": null,
+      "prev_page": null,
+      "total_pages": 1,
+      "total_count": 1
+    }
+  },
+  "activityList": [
+    {
+      "id": 504101,
+      "name": "Introduction",
+      "activity_type": "introduction",
+      "lesson_section_id": 64011,
+      "lesson_id": 23930,
+      "first_segment_id": 719375,
+      "alternate_activity_ids": [],
+      "status": "ok",
+      "next_activity_id": 504102,
+      "video_duration": null
+    },
+    {
+      "id": 504102,
+      "name": "Think of a time when paying close attention to small details helped you make sense of something complicated—what did that experience teach you about how you approach new material?",
+      "activity_type": "reflection_conversation",
+      "lesson_section_id": 64011,
+      "lesson_id": 23930,
+      "first_segment_id": 719378,
+      "alternate_activity_ids": [],
+      "status": "ok",
+      "done_finished_next_activity_id": 504103,
+      "done_max_turns_next_activity_id": 504103,
+      "done_moderation_next_activity_id": 504103,
+      "done_disengaged_next_activity_id": 504103
+    },
+    {
+      "id": 504103,
+      "name": "Read PDE Notation",
+      "activity_type": "lecture",
+      "lesson_section_id": 64011,
+      "lesson_id": 23930,
+      "first_segment_id": 719377,
+      "alternate_activity_ids": [],
+      "status": "ok",
+      "next_activity_id": 504104,
+      "video_duration": null
+    },
+    {
+      "id": 504104,
+      "name": "In one sentence, restate the rule for determining a PDE's order from its derivatives.",
+      "activity_type": "clarifying_conversation",
+      "lesson_section_id": 64011,
+      "lesson_id": 23930,
+      "first_segment_id": 719381,
+      "alternate_activity_ids": [],
+      "status": "ok",
+      "done_finished_next_activity_id": 504105,
+      "done_max_turns_next_activity_id": 504105,
+      "done_moderation_next_activity_id": 504105,
+      "done_disengaged_next_activity_id": 504105
+    },
+    {
+      "id": 504105,
+      "name": "Linearity in PDEs",
+      "activity_type": "lecture",
+      "lesson_section_id": 64011,
+      "lesson_id": 23930,
+      "first_segment_id": 719380,
+      "alternate_activity_ids": [],
+      "status": "ok",
+      "next_activity_id": 504106,
+      "video_duration": null
+    },
+    {
+      "id": 504106,
+      "name": "Why is the equation u_t = a(x)u_{xx} + b(x)u still linear, even though its coefficients depend on x and it is second order?",
+      "activity_type": "clarifying_conversation",
+      "lesson_section_id": 64011,
+      "lesson_id": 23930,
+      "first_segment_id": 719384,
+      "alternate_activity_ids": [],
+      "status": "ok",
+      "done_finished_next_activity_id": 504107,
+      "done_max_turns_next_activity_id": 504107,
+      "done_moderation_next_activity_id": 504107,
+      "done_disengaged_next_activity_id": 504107
+    },
+    {
+      "id": 504107,
+      "name": "Conclusion",
+      "activity_type": "conclusion",
+      "lesson_section_id": 64011,
+      "lesson_id": 23930,
+      "first_segment_id": 719383,
+      "alternate_activity_ids": [],
+      "status": "ok",
+      "next_activity_id": "end_of_section",
+      "video_duration": null
+    }
+  ],
+  "activities": {
+    "504101": {
+      "id": 504101,
+      "name": "Introduction",
+      "activity_type": "introduction",
+      "lesson_section_id": 64011,
+      "lesson_id": 23930,
+      "first_segment_id": 719375,
+      "alternate_activity_ids": [],
+      "status": "ok",
+      "next_activity_id": 504102,
+      "video_duration": null,
+      "content": "In applied settings, partial differential equations are often introduced as model equations rather than as isolated symbols, so the first skill is learning how to read the structure of the equation before trying to solve it. Small differences in notation can change how you classify an equation, and that classification affects the methods you would consider next.\n\nThis lesson begins by having you inspect derivative notation carefully, then use that reading to distinguish the equation’s order from its linearity. You will work term by term, separate derivative terms from ordinary algebraic ones, and then apply the same process to representative PDEs so you can classify them consistently. Start by reading the notation closely, and then use that reading to organize the equation.",
+      "citations": null,
+      "lecture_video": {
+        "video_url": null,
+        "video_status": null,
+        "subtitle_tracks": {
+          "en": "[link removed]"
+        },
+        "scenes": [
+          {
+            "id": 610127,
+            "scene_title": "Reading PDE Structure",
+            "scene_text": "",
+            "scene_narration": "<p>In applied settings, partial differential equations are often introduced as model equations rather than as isolated symbols, so the first skill is learning how to read the structure of the equation before trying to solve it. Small differences in notation can change how you classify an equation, and that classification affects the methods you would consider next.\n\n</p>",
+            "scene_layout": "intro",
+            "scene_image_animation": "static",
+            "scene_order": 0,
+            "scene_preview_status": "ok",
+            "scene_generation_status": "ok",
+            "scene_image_fit": "contain",
+            "avatar_style": "rectangular",
+            "scene_thumbnail_url": "[link removed]",
+            "scene_video_url": null,
+            "scene_captions_vtt_url": "[link removed]",
+            "scene_image_url": null,
+            "scene_clip_url": null,
+            "scene_layout_html": "[layout html removed]"
+          },
+          {
+            "id": 610128,
+            "scene_title": "Order vs Linearity",
+            "scene_text": "",
+            "scene_narration": "<p>This lesson begins by having you inspect derivative notation carefully, then use that reading to distinguish the equation’s order from its linearity. You will work term by term, separate derivative terms from ordinary algebraic ones, and then apply the same process to representative PDEs so you can classify them consistently. Start by reading the notation closely, and then use that reading to organize the equation.</p>",
+            "scene_layout": "image_info",
+            "scene_image_animation": "static",
+            "scene_order": 1,
+            "scene_preview_status": "ok",
+            "scene_generation_status": "ok",
+            "scene_image_fit": "contain",
+            "avatar_style": "rectangular",
+            "scene_thumbnail_url": "[link removed]",
+            "scene_video_url": null,
+            "scene_captions_vtt_url": "[link removed]",
+            "scene_image_url": "[link removed]",
+            "scene_clip_url": null,
+            "scene_layout_html": "[layout html removed]\n"
+          }
+        ],
+        "image_url": null
+      },
+      "video_effect_scene_transition": "fade"
+    },
+    "504105": {
+      "id": 504105,
+      "name": "Linearity in PDEs",
+      "activity_type": "lecture",
+      "lesson_section_id": 64011,
+      "lesson_id": 23930,
+      "first_segment_id": 719380,
+      "alternate_activity_ids": [],
+      "status": "ok",
+      "next_activity_id": 504106,
+      "video_duration": null,
+      "content": "Now shift from order to the other classification feature: linearity. Order tells you the highest derivative present; linearity asks how the dependent variable and its derivatives appear in the equation.\n\nA linear differential operator is built so that it respects addition and scalar multiplication. In practical terms, if you give it a sum of functions, it separates that sum into separate pieces, and if a constant multiplies a function, that constant can be carried through the differentiation. That behavior is the algebraic foundation behind the principle of superposition, where linear combinations of solutions stay within the same linear structure.\n\nA variable-coefficient linear PDE is one where the coefficient functions depend on the independent variables, such as x or t, but they still act only as multipliers in front of the unknown or its derivatives. The coefficients may change from point to point without changing the operator’s linear form. This is the setting you see in models such as the heat equation, the wave equation, Laplace's equation, and the Black–Scholes equation.\n\nDifferentiation itself is linear: the derivative of a sum is the sum of the derivatives, and a scalar factor can be pulled outside differentiation. The classification changes when the unknown appears in a nonlinear term, such as a product of u with one of its derivatives, a power like u squared, or a nonlinear function applied to u. Those structures are the ones to watch for when you analyze a PDE's form.",
+      "citations": null,
+      "lecture_video": {
+        "video_url": null,
+        "video_status": null,
+        "subtitle_tracks": {
+          "en": "[link removed]"
+        },
+        "scenes": [
+          {
+            "id": 610135,
+            "scene_title": "Linearity vs Order",
+            "scene_text": "",
+            "scene_narration": "<p>Now shift from order to the other classification feature: linearity. Order tells you the highest derivative present; linearity asks how the dependent variable and its derivatives appear in the equation.</p>",
+            "scene_layout": "full_bleed_image",
+            "scene_image_animation": "static",
+            "scene_order": 0,
+            "scene_preview_status": "ok",
+            "scene_generation_status": "ok",
+            "scene_image_fit": "cover",
+            "avatar_style": "circular",
+            "scene_thumbnail_url": "[link removed]",
+            "scene_video_url": null,
+            "scene_captions_vtt_url": "[link removed]",
+            "scene_image_url": "[link removed]",
+            "scene_clip_url": null,
+            "scene_layout_html": "[layout html removed]\n"
+          },
+          {
+            "id": 610136,
+            "scene_title": "Operator Linearity",
+            "scene_text": "",
+            "scene_narration": "<p>A linear differential operator is built so that it respects addition and scalar multiplication. In practical terms, if you give it a sum of functions, it separates that sum into separate pieces, and if a constant multiplies a function, that constant can be carried through the differentiation. That behavior is the algebraic foundation behind the principle of superposition, where linear combinations of solutions stay within the same linear structure.</p>",
+            "scene_layout": "image_info",
+            "scene_image_animation": "static",
+            "scene_order": 1,
+            "scene_preview_status": "ok",
+            "scene_generation_status": "ok",
+            "scene_image_fit": "contain",
+            "avatar_style": "rectangular",
+            "scene_thumbnail_url": "[link removed]",
+            "scene_video_url": null,
+            "scene_captions_vtt_url": "[link removed]",
+            "scene_image_url": "[link removed]",
+            "scene_clip_url": null,
+            "scene_layout_html": "[layout html removed]\n"
+          },
+          {
+            "id": 610137,
+            "scene_title": "Variable-Coefficient PDEs",
+            "scene_text": "Coefficients depend on x or t\n\nThey multiply the unknown or its derivatives\n\nThe PDE stays linear in form\n\nCommon examples: heat, wave, Laplace, Black–Scholes",
+            "scene_narration": "<p>A variable-coefficient linear PDE is one where the coefficient functions depend on the independent variables, such as x or t, but they still act only as multipliers in front of the unknown or its derivatives. The coefficients may change from point to point without changing the operator’s linear form. This is the setting you see in models such as the heat equation, the wave equation, Laplace's equation, and the Black–Scholes equation.</p>",
+            "scene_layout": "text_info",
+            "scene_image_animation": "static",
+            "scene_order": 2,
+            "scene_preview_status": "ok",
+            "scene_generation_status": "ok",
+            "scene_image_fit": "contain",
+            "avatar_style": "rectangular",
+            "scene_thumbnail_url": "[link removed]",
+            "scene_video_url": null,
+            "scene_captions_vtt_url": "[link removed]",
+            "scene_image_url": null,
+            "scene_clip_url": null,
+            "scene_layout_html": "[layout html removed]\n"
+          },
+          {
+            "id": 610138,
+            "scene_title": "Linear vs Nonlinear Terms",
+            "scene_text": "",
+            "scene_narration": "<p>Differentiation itself is linear: the derivative of a sum is the sum of the derivatives, and a scalar factor can be pulled outside differentiation. The classification changes when the unknown appears in a nonlinear term, such as a product of u with one of its derivatives, a power like u squared, or a nonlinear function applied to u. Those structures are the ones to watch for when you analyze a PDE's form.</p>",
+            "scene_layout": "full_bleed_image",
+            "scene_image_animation": "static",
+            "scene_order": 3,
+            "scene_preview_status": "ok",
+            "scene_generation_status": "ok",
+            "scene_image_fit": "cover",
+            "avatar_style": "invisible",
+            "scene_thumbnail_url": "[link removed]",
+            "scene_video_url": null,
+            "scene_captions_vtt_url": "[link removed]",
+            "scene_image_url": "[link removed]",
+            "scene_clip_url": null,
+            "scene_layout_html": "[layout html removed]\n"
+          }
+        ],
+        "image_url": null
+      },
+      "video_effect_scene_transition": "fade"
+    },
+    "504106": {
+      "id": 504106,
+      "name": "Why is the equation u_t = a(x)u_{xx} + b(x)u still linear, even though its coefficients depend on x and it is second order?",
+      "activity_type": "clarifying_conversation",
+      "lesson_section_id": 64011,
+      "lesson_id": 23930,
+      "first_segment_id": 719384,
+      "alternate_activity_ids": [],
+      "status": "ok",
+      "done_finished_next_activity_id": 504107,
+      "done_max_turns_next_activity_id": 504107,
+      "done_moderation_next_activity_id": 504107,
+      "done_disengaged_next_activity_id": 504107,
+      "knowledge_and_misconceptions": [
+        {
+          "knowledge": "A PDE is linear when u and its partial derivatives appear only to the first power, are not multiplied together, and are not placed inside nonlinear functions; coefficients may depend on the independent variables, so a(x)u_x is linear while u u_x is nonlinear, and linearity is independent of order.",
+          "misconceptions": [
+            "Confusing linearity and order",
+            "Belief that variable coefficients make an equation nonlinear",
+            "Assuming any product involving u is linear",
+            "Misinterpreting nonlinear functions of u as acceptable linear terms"
+          ]
+        }
+      ],
+      "generated_misconceptions": [],
+      "question": "Why is the equation u_t = a(x)u_{xx} + b(x)u still linear, even though its coefficients depend on x and it is second order?",
+      "answer": "It is linear because the unknown function u and its derivatives appear only to the first power and are not multiplied together or put inside nonlinear functions. The terms a(x)u_{xx} and b(x)u are allowed in a linear PDE because a(x) and b(x) depend only on the independent variable x, not on u. It is second order because the highest derivative present is u_{xx}, a second derivative. So the equation is linear in u, but second order in the spatial variable.",
+      "answer_options": [
+        {
+          "uuid": "f89bdf7c-9a70-42c6-9c31-cd341c98b2b2",
+          "answer": "It is linear because the unknown function u and its derivatives appear only to the first power and are not multiplied together or put inside nonlinear functions. The terms a(x)u_{xx} and b(x)u are allowed in a linear PDE because a(x) and b(x) depend only on the independent variable x, not on u. It is second order because the highest derivative present is u_{xx}, a second derivative. So the equation is linear in u, but second order in the spatial variable."
+        }
+      ],
+      "chat_preview_segment_id": 719382,
+      "question_video": {
+        "video_url": null,
+        "video_status": null,
+        "subtitle_tracks": {
+          "en": "[link removed]"
+        },
+        "scenes": [
+          {
+            "id": 610144,
+            "scene_title": "",
+            "scene_text": "Why is the equation u_t = a(x)u_{xx} + b(x)u still linear, even though its coefficients depend on x and it is second order?",
+            "scene_narration": "Why is the equation u_t = a(x)u_{xx} + b(x)u still linear, even though its coefficients depend on x and it is second order?",
+            "scene_layout": "big_point__question",
+            "scene_image_animation": "static",
+            "scene_order": 0,
+            "scene_preview_status": "ok",
+            "scene_generation_status": "ok",
+            "scene_image_fit": "contain",
+            "avatar_style": "rectangular",
+            "scene_thumbnail_url": "[link removed]",
+            "scene_video_url": null,
+            "scene_captions_vtt_url": "[link removed]",
+            "scene_image_url": null,
+            "scene_clip_url": null,
+            "scene_layout_html": "[layout html removed]\n"
+          }
+        ],
+        "image_url": null
+      },
+      "wait_video": {
+        "video_url": null,
+        "video_status": null,
+        "subtitle_tracks": {},
+        "scenes": [
+          {
+            "id": 610143,
+            "scene_title": "",
+            "scene_text": "",
+            "scene_narration": "",
+            "scene_layout": "big_point__question",
+            "scene_image_animation": "static",
+            "scene_order": 0,
+            "scene_preview_status": "ok",
+            "scene_generation_status": "ok",
+            "scene_image_fit": "contain",
+            "avatar_style": "rectangular",
+            "scene_thumbnail_url": null,
+            "scene_video_url": null,
+            "scene_captions_vtt_url": null,
+            "scene_image_url": null,
+            "scene_clip_url": null,
+            "scene_layout_html": "[layout html removed]\n"
+          }
+        ],
+        "image_url": null
+      },
+      "question_bank": [
+        "Name the two structural criteria that determine whether a PDE is linear in the unknown function u and its partial derivatives.",
+        "Why is the equation u_t = a(x)u_{xx} + b(x)u still linear, even though its coefficients depend on x and it is second order?",
+        "A team is checking two PDEs in a thermal model for temperature u(x,t): (1) u_t = a(x)u_{xx} + s(x), and (2) u_t = a(x)u_{xx} + u\\,u_x. Classify each equation as linear or nonlinear, and name the exact term or feature that decides it.",
+        "A colleague reviews two draft models and says: (1) u_t = a(x)u_{xx} + b(x)u is nonlinear because the coefficients depend on x, and (2) u_t = a(x)u_{xx} + \\sin(u) is linear because u appears only inside one function. Which claim is wrong in each case, and what criterion should be used instead to classify the equations?"
+      ]
+    }
+  },
+  "vocabulary": [
+    {
+      "id": 209582,
+      "term": "black–scholes equation",
+      "definition": "A model PDE used in finance to describe how an option’s value changes over time and with the asset price."
+    },
+    {
+      "id": 209583,
+      "term": "derivative notation",
+      "definition": "The subscript symbols that show which variable is differentiated and how many times."
+    },
+    {
+      "id": 209584,
+      "term": "laplace's equation",
+      "definition": "A model equation with no time dependence, often used for steady-state situations like temperature or potential fields."
+    },
+    {
+      "id": 209585,
+      "term": "linearity",
+      "definition": "A property where adding inputs produces added outputs, so combinations of solutions behave predictably."
+    },
+    {
+      "id": 209586,
+      "term": "mixed partial derivative",
+      "definition": "A derivative taken with respect to more than one variable, such as differentiating first by x and then by t."
+    },
+    {
+      "id": 209587,
+      "term": "order",
+      "definition": "The highest derivative level present in the equation; it tells you whether first-, second-, or higher-order derivatives appear."
+    },
+    {
+      "id": 209588,
+      "term": "principle of superposition",
+      "definition": "A rule saying that any combination of solutions is also a solution when the equation has this additive behavior."
+    },
+    {
+      "id": 209589,
+      "term": "variable-coefficient linear PDE",
+      "definition": "A partial differential equation whose multipliers can change with position or time but still do not involve powers or products of the unknown."
+    }
+  ]
+}

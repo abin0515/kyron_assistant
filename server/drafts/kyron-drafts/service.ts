@@ -4,6 +4,7 @@ import {
   listDraftsByIds,
   listDraftsByUser,
   listDraftsForSynchronization,
+  listGeneratingDrafts,
   markDraftAvailabilityUnknown,
   markDraftUnavailable,
   saveDraft,
@@ -27,6 +28,9 @@ import type {
 } from "@/types/api";
 
 const DRAFT_SYNC_CONCURRENCY = 4;
+const POLLER_BATCH_SIZE = 10;
+// Each generating draft is checked at most this often.
+const POLLER_MIN_INTERVAL_SECONDS = 30;
 
 export async function createDraftWithRequiredPersistence(
   input: CreateDraftRequest,
@@ -64,6 +68,35 @@ export async function syncDraft(id: number): Promise<Draft> {
 
     throw error;
   }
+}
+
+// Server-side status poller, run by the worker: checks drafts that are still
+// generating for every owner, so a finished draft starts its lesson check
+// without anyone keeping a page open.
+export async function syncGeneratingDraftsForAllOwners(limit = POLLER_BATCH_SIZE): Promise<number> {
+  const drafts = await listGeneratingDrafts(limit, POLLER_MIN_INTERVAL_SECONDS);
+  let synced = 0;
+
+  for (const stored of drafts) {
+    try {
+      const draft = toDraft(await getKyronLessonCollection(stored.id));
+
+      await saveDraft(draft, { ...stored.createdBy, role: "user" });
+
+      if (draft.status === "done") {
+        await notifyQaOfCompletedDraft(draft);
+      }
+
+      synced += 1;
+    } catch (error) {
+      console.error("Server-side draft status check failed.", {
+        draftId: stored.id,
+        message: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  }
+
+  return synced;
 }
 
 export async function listCurrentUserDrafts(

@@ -1,6 +1,6 @@
 # Kyron Course QA Agent
 
-Status as of October 30, 2026. Source proposal:
+Status as of November 2, 2026. Source proposal:
 `Kyron_QA_Agent_Implementation_Plan.docx` (October 20, 2026).
 
 ## Goal
@@ -17,15 +17,16 @@ M1/M2 material.
 ## How QA runs in the generation runtime
 
 ```text
+Production job created (one per course) ── advanced by the scheduler (worker tick)
 Generate course setup ──► setup check (inline) ──► revision agent: safe fixes written to the workspace
                                                    └► critical/unfixable → proposed version, escalated
-Create course draft ──► submit gate: setup check current and passing?
-                        ├─ setup changed → re-check inline, then continue
-                        ├─ blocking findings → stop, offer "Submit anyway" (recorded)
-                        └─ passed → create the Kyron draft
-Kyron reports "done" ──► generated-lesson check starts automatically
-                         ├─ Kyron MCP mapped → read, check, revise, video, narration check
-                         └─ not yet mapped → waits; paste the lesson on the workspace page
+Create course draft ──► submit gate: setup check current and passing? ──► Kyron draft (public API)
+Server-side poller ──► Kyron reports "done" ──► generated-lesson check starts automatically
+Lesson check ──► read through Kyron MCP (scenes, conversations, vocabulary)
+             ──► checks ──► revision agent writes safe fixes scene by scene (lock version, read back)
+             ──► independent verifier: a fix that adds an error is reverted and escalated
+             ──► re-check ──► render video in Kyron (QA_KYRON_VIDEO) ──► narration check from captions
+             ──► mismatch: fix narration and re-render once ──► review: escalations, human checks, publish (manual)
 ```
 
 Every state of the content along the way (as read, as revised, as proposed) is
@@ -39,10 +40,13 @@ recorded as a numbered **content version**; see below.
   Changes proposed, escalated, blocked or failed checks stop submission unless
   the user chooses **Submit anyway**, which is recorded on the run and in the
   logs.
-- **After Kyron.** Draft sync starts the lesson check when a draft becomes
-  `done`.
-- Anything still pending is advanced by an open workspace page or by
-  `npm run qa:worker`.
+- **After Kyron.** The worker's server-side poller (every generating draft,
+  every owner, at most every 30 s) starts the lesson check when a draft becomes
+  `done`; a page that polls does the same.
+- **Scheduler.** `npm run qa:worker` calls `/api/qa/driver` (later Vercel
+  Cron). Each tick polls generating drafts, advances QA runs and updates every
+  production job. Runs waiting on a render keep a timed lease so the worker
+  does not spin.
 
 ### What the setup check covers
 
@@ -111,6 +115,73 @@ Structural rules, source fidelity (claims vs. workspace references), assessment
 cross-field consistency, and — once a video is available — narration vs.
 transcript. Tutor behavior and visuals are recorded as human checks.
 
+## Production jobs
+
+Table `production_jobs`, one per course, created when the course setup is first
+checked (single drafts and batches alike). Each scheduler tick recomputes the
+stage from the durable records and logs every change (`production.stage`):
+
+| Stage | Meaning |
+|---|---|
+| Course setup | Setup generated, checked and fixed; waiting for the Kyron draft |
+| Kyron generating | The draft exists; Kyron is generating |
+| Lesson QA | Reading, checking, revising and verifying the lesson |
+| Video | Rendering in Kyron and checking the narration |
+| Needs review | What a person must do is listed (escalations, human checks, video) |
+| Ready | Script, video and human checks passed; publishing stays manual |
+| Blocked | Kyron failed, configuration missing, or the course budget is spent |
+
+`QA_COURSE_BUDGET_USD` (default $1) caps model spend per course: once reached,
+model steps stop and the job shows **Blocked**. The **QA agent → Production**
+tab lists every job with its stage, what is needed, links and cost.
+
+## Kyron MCP read and write
+
+Connected with permission `read write` (client file served as JSON, see the
+README). The app is the only caller; models never get tools.
+
+- **Read** (`server/qa/kyron-lesson.ts`): collection → draft lesson → sections →
+  activities → scenes, plus vocabulary. Lecture narration and on-screen text
+  are the joined scene text for the checks; each scene's narration, title and
+  on-screen text is its own field (`scenes.<id>.narration`, …). Conversations
+  map to open questions (question and model answer) with their misconceptions
+  as tutor guidance. Vocabulary is checked as a "Vocabulary" activity.
+- **Write**: only `update_lesson_activity`, `update_lesson`,
+  `update_lesson_section`, `update_vocabulary_item` and (for video)
+  `regenerate_all_lesson_videos`. Every edit carries the lesson's
+  `lock_version`; a refusal becomes a conflict and escalates. Scene narration
+  keeps the lecture script in step. Never sent: scene or vocabulary deletion,
+  `generate_scenes`, theme or avatar changes, publishing.
+- **Protected**: answer keys and lesson settings (`lesson.title`, `audience`,
+  `objective`) always need a person's approval; accepted ones are then written.
+- **Switches**: `QA_KYRON_WRITES` (`test-only` by default: drafts named
+  "[QA Test] …"; `all`; `off`) and `QA_KYRON_VIDEO` (`off` by default; renders
+  use Kyron credits). Without write permission or outside the switch, fixes are
+  saved as proposed versions.
+
+## Independent verifier
+
+After the revision agent writes changes, `server/qa/verifier.ts` reviews each
+one in a fresh call with different instructions and high reasoning effort
+(purpose `qa.verify`): resolves, partial, does not resolve, or introduces an
+error. A change that introduces an error is written back to its previous value,
+saved as a version by "QA verifier", and its findings are escalated.
+
+## Video and narration loop
+
+When the script passes and video is allowed, the run asks Kyron to render the
+lesson, checks the render status every 30 s (`validate_lesson`), then compares
+Kyron's captions with the approved script. If they differ, the agent may adjust
+the scene narration and the lesson is rendered once more; a second mismatch is
+escalated.
+
+## Defect library
+
+Table `qa_defects`; **QA agent → Defects**. Reviewers log what QA missed, false
+alarms, wrong fixes, harness bugs, Kyron output errors and source problems.
+Findings a reviewer rejects and audits that find a defect are added
+automatically. CSV/JSON export feeds the testing sets.
+
 ## Key facts
 
 - **The public Kyron API has no lesson content.** Reading and editing generated
@@ -132,19 +203,24 @@ transcript. Tutor behavior and visuals are recorded as human checks.
 | 5a | One revision agent (`gpt-6-luna`) resolves all open findings per round; the server validates and applies its changes. | Related changes stay consistent, and corrections use a pinned model. |
 | 5b | Every content state is saved as a numbered version with before/after per field. | A full audit trail of what the agents changed and why. |
 | 6 | Missing evidence is NOT_TESTED, never PASS; a run with untested required checks ends **Incomplete**. | A green summary must not hide gaps. |
-| 7 | Video generation starts only after the lesson check passes; publishing is not built. | Cost control; `AGENTS.md`. |
+| 7 | Video generation starts only after the lesson check passes; at most one re-render; publishing is not built. | Cost control; `AGENTS.md`. |
+| 7a | One durable production job per course, advanced by one scheduler; a server-side poller replaces the open-page dependency. | Courses move without anyone watching a page. |
+| 7b | An independent verifier reviews every applied fix and can undo it. | The agent that wrote a fix does not grade it. |
+| 7c | Kyron writes are limited to "[QA Test]" drafts until the harness is validated (`QA_KYRON_WRITES`). | Safe testing on the shared Kyron account. |
 | 8 | OpenAI `gpt-6-luna`, medium effort, strict JSON, `store: false`, token budget per run. | Configured and tested. |
 | 9 | Admins and developers see QA across the team; other users see their own. | Review needs one shared queue. |
 
 ## Storage (Neon)
 
-Migrations `100`–`120` (one statement per file, numbered from 100 so they cannot
+Migrations `100`–`125` (one statement per file, numbered from 100 so they cannot
 collide with other branches):
 
 - `qa_lessons`, `qa_snapshots`, `qa_runs`, `qa_rubric_approvals` — documents in
   JSONB with indexed columns. Runs use a version column for optimistic updates
   and lease columns for atomic claims.
 - `qa_content_versions` — numbered content versions with field-level changes.
+- `production_jobs` — one per course, with stage, needs, cost and events.
+- `qa_defects` — the defect library.
 - `app_log_events`, `llm_usage_events`, `model_pricing` — the log system, with
   `gpt-6-luna` and `gpt-4o-transcribe` prices seeded from OpenAI's pricing page.
 
@@ -184,23 +260,18 @@ rows each time. Uploaded videos for narration checks stay on local disk under
 | Area | Status |
 |---|---|
 | Access-code sign-in, roles, localhost guard | Done |
-| Kyron MCP sign-in and tool explorer | Built; not connected |
+| Kyron MCP sign-in and tool explorer | Connected (read; write after reconnect) |
+| Kyron lesson read, scene-level write, video render and captions | Done; writes limited to "[QA Test]" drafts, video off by default |
 | QA in the generation runtime (setup check, submit gate, lesson check trigger) | Done |
-| Generated-lesson checks, revision agent, video and narration steps | Done; automatic reading, writing and video wait for the Kyron MCP mapping |
+| Generated-lesson checks, revision agent, independent verifier, narration loop | Done |
+| Production jobs, scheduler and server-side poller | Done |
+| Defect library | Done |
 | Content-version log (`qa_content_versions`, Logs tab, run panel, download) | Done |
 | Neon storage for QA | Done |
 | Log system and `/logs` | Done |
 | Rubric tuning | Waits for known defects from colleagues |
 
-### What remains once Kyron MCP is connected
-
-Implement the Kyron methods in `server/qa/content-sources.ts` from the tool list
-on the **Kyron connection** page (`readLesson`, `readField`, `writeField`,
-`requestVideo`, `getVideoStatus`, `downloadVideo`), set `readable`, `writable`
-and `supportsVideo` to `true`, and request the `write` scope. Lesson checks then
-read, fix and trigger video without pasting.
-
-## Pasting a generated lesson (until Kyron MCP is mapped)
+## Pasting a generated lesson (without Kyron MCP)
 
 On the workspace page, **Quality checks → Generated lesson → Paste generated
 lesson content**. The workspace sources are added as references automatically.
@@ -252,7 +323,8 @@ as NOT_TESTED.
 `AUTH_MODE`, `ACCESS_CODE_ADMIN`, `ACCESS_CODE_DEVELOPER`, `SESSION_SECRET`,
 `DATABASE_URL`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_QA_MODEL` (optional),
 `OPENAI_TRANSCRIPTION_MODEL`, `OPENAI_REVISION_MODEL`, `QA_AUTONOMY_POLICY`, `QA_RUN_TOKEN_BUDGET`,
-`QA_AUDIT_RATE`, `CRON_SECRET`, `KYRON_MCP_URL`, `KYRON_OAUTH_CLIENT_ID`,
+`QA_AUDIT_RATE`, `QA_KYRON_WRITES`, `QA_KYRON_VIDEO`, `QA_COURSE_BUDGET_USD`,
+`QA_VIDEO_POLL_MS` (tests), `CRON_SECRET`, `KYRON_MCP_URL`, `KYRON_OAUTH_CLIENT_ID`,
 `APP_BASE_URL`, `TOKEN_ENCRYPTION_KEY`, `KYRON_MCP_READ_TOOLS`, `QA_DATA_DIR`
 (media only).
 
@@ -262,5 +334,8 @@ as NOT_TESTED.
 pipeline tests run against an in-memory copy of the QA store and cover the
 setup fix loop, the submit gate, escalation of critical setup problems, waiting
 for Kyron MCP, pasted-lesson proposals, writable fixes, concurrent edits, the
-token budget, and the content versions each of these records. The revision
-agent tests cover field permissions and the validation of model output.
+token budget, the content versions each of these records, scene-level Kyron
+fixes, verifier reverts, the render and re-render loop and the course budget.
+The Kyron tests use a fixture read from draft 14826 and cover mapping, update
+building, lock versions, conflicts and the write switches; production tests
+cover every stage.

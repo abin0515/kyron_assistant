@@ -29,6 +29,7 @@ export function revisionModel(): string {
 }
 
 export async function runStructuredModel<T>({
+  effort = "medium",
   input,
   instructions,
   maxOutputTokens = 16_000,
@@ -38,6 +39,7 @@ export async function runStructuredModel<T>({
   schema,
   schemaName,
 }: {
+  effort?: "medium" | "high";
   input: string;
   instructions: string;
   maxOutputTokens?: number;
@@ -53,7 +55,7 @@ export async function runStructuredModel<T>({
       model,
       instructions: `${instructions}\n\n${UNTRUSTED_CONTENT_RULE}`,
       input,
-      reasoning: { effort: "medium" },
+      reasoning: { effort },
       max_output_tokens: maxOutputTokens,
       store: false,
       text: {

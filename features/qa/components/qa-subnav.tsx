@@ -9,9 +9,11 @@ export function QaSubnav({ isAdmin }: { isAdmin: boolean }) {
   const pathname = usePathname();
   const links = [
     { href: "/qa", label: "Checks", active: pathname === "/qa" || pathname.startsWith("/qa/runs") },
+    { href: "/qa/production", label: "Production", active: pathname.startsWith("/qa/production") },
     ...(isAdmin
       ? [{ href: "/qa/escalations", label: "Escalations", active: pathname.startsWith("/qa/escalations") }]
       : []),
+    { href: "/qa/defects", label: "Defects", active: pathname.startsWith("/qa/defects") },
     { href: "/qa/rubrics", label: "Rubrics", active: pathname.startsWith("/qa/rubrics") },
   ];
 

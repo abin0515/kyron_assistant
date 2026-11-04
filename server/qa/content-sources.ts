@@ -4,7 +4,7 @@ import {
   getDraftWorkspaceById,
   updateDraftWorkspace,
 } from "@/server/drafts/workspaces/repository";
-import { KyronMcpError } from "@/server/kyron-mcp/errors";
+import { hasKyronWriteAccess } from "@/server/kyron-mcp/service";
 import type { DraftWorkspace, QaContentSourceKind, QaLesson } from "@/types/api";
 
 import {
@@ -13,10 +13,23 @@ import {
   readWorkspaceSetupField,
   setupFieldUpdate,
 } from "./course-setup-fields";
+import {
+  mapKyronLesson,
+  readKyronCaptions,
+  readKyronField,
+  readKyronLessonData,
+  readKyronRenderStatus,
+  requestKyronRender,
+  writeKyronField,
+} from "./kyron-lesson";
 import type { LessonPacket } from "./types";
 import { loadWorkspaceReferences } from "./workspace-references";
 
 export type VideoJobStatus = "pending" | "done" | "failed";
+
+// Drafts whose name starts with this may be changed while writes are limited
+// to test content.
+export const TEST_CONTENT_PREFIX = "[QA Test]";
 
 // Where QA content comes from and whether the agent can change it. Every
 // source feeds the same normalized snapshot.
@@ -31,6 +44,9 @@ export type LessonContentSource = {
   requestVideo(lesson: QaLesson): Promise<string>;
   getVideoStatus(lesson: QaLesson, jobId: string): Promise<VideoJobStatus>;
   downloadVideo(lesson: QaLesson, jobId: string): Promise<{ fileName: string; bytes: Uint8Array }>;
+  // Sources that render their own video can return its spoken text directly
+  // (for Kyron, the captions) instead of a file to transcribe.
+  readRenderedNarration?(lesson: QaLesson): Promise<string>;
 };
 
 export class ContentSourceUnavailableError extends Error {
@@ -40,19 +56,23 @@ export class ContentSourceUnavailableError extends Error {
   }
 }
 
-export function getContentSource(kind: QaContentSourceKind): LessonContentSource {
+// Whether a source may write or render depends on the lesson (test content
+// only, unless widened) and on the Kyron sign-in, so it is resolved per run.
+export async function resolveContentSource(
+  kind: QaContentSourceKind,
+  lesson: QaLesson,
+): Promise<LessonContentSource> {
   switch (kind) {
     case "manual":
       return manualSource;
     case "workspace_setup":
       return workspaceSetupSource;
-    case "kyron_mcp":
-      return kyronMcpSource;
-  }
-}
+    case "kyron_mcp": {
+      const writable = allowedFor(lesson, "QA_KYRON_WRITES", "test-only") && (await hasKyronWriteAccess());
 
-export function isKyronContentSourceAvailable(): boolean {
-  return kyronMcpSource.readable;
+      return kyronSource({ writable, video: writable && allowedFor(lesson, "QA_KYRON_VIDEO", "off") });
+    }
+  }
 }
 
 // The course setup lives in the launcher's own workspace, so the agent can
@@ -65,14 +85,7 @@ const workspaceSetupSource: LessonContentSource = {
   async readLesson(lesson) {
     const workspace = await requireWorkspace(lesson);
 
-    return buildSetupPacket(
-      workspace,
-      await loadWorkspaceReferences({
-        ownerId: lesson.ownerId,
-        sourceText: workspace.sourceText,
-        workspaceId: workspace.id,
-      }),
-    );
+    return buildSetupPacket(workspace, await workspaceReferences(lesson, workspace));
   },
   async readField(lesson, _activityId, fieldPath) {
     if (!isSetupFieldPath(fieldPath)) {
@@ -116,22 +129,75 @@ const manualSource: LessonContentSource = {
   downloadVideo: unsupported("Pasted lesson content has no video jobs."),
 };
 
-// Reading, editing and video generation through Kyron MCP depend on tools that
-// are only visible after Kyron sign-in. Implement these methods from the
-// capability manifest on the Kyron connection page, then set readable,
-// writable and supportsVideo to true.
-const kyronMcpSource: LessonContentSource = {
-  kind: "kyron_mcp",
-  readable: false,
-  writable: false,
-  supportsVideo: false,
-  readLesson: notMapped,
-  readField: notMapped,
-  writeField: notMapped,
-  requestVideo: notMapped,
-  getVideoStatus: notMapped,
-  downloadVideo: notMapped,
-};
+// The generated lesson in Kyron, read and changed through Kyron MCP. Fixes
+// are written scene by scene with Kyron's lock version; video is rendered by
+// Kyron and checked through its captions.
+function kyronSource({ video, writable }: { video: boolean; writable: boolean }): LessonContentSource {
+  return {
+    kind: "kyron_mcp",
+    readable: true,
+    writable,
+    supportsVideo: video,
+    async readLesson(lesson) {
+      const draftId = requireDraftId(lesson);
+      const data = await readKyronLessonData(draftId);
+
+      if (data.status !== "done") {
+        throw new ContentSourceUnavailableError(
+          `Kyron is still working on draft ${draftId} (${data.status}). Re-run the check once it is done.`,
+        );
+      }
+
+      return { ...mapKyronLesson(data), references: await workspaceReferences(lesson) };
+    },
+    readField: (lesson, activityId, fieldPath) => readKyronField(requireDraftId(lesson), activityId, fieldPath),
+    async writeField(lesson, activityId, fieldPath, value) {
+      if (!writable) {
+        throw new ContentSourceUnavailableError(
+          "Writing to this Kyron draft is not allowed (Kyron write permission or QA_KYRON_WRITES).",
+        );
+      }
+
+      await writeKyronField(requireDraftId(lesson), activityId, fieldPath, value);
+    },
+    async requestVideo(lesson) {
+      if (!video) {
+        throw new ContentSourceUnavailableError("Kyron video rendering is turned off (QA_KYRON_VIDEO).");
+      }
+
+      return requestKyronRender(requireDraftId(lesson));
+    },
+    getVideoStatus: (lesson) => readKyronRenderStatus(requireDraftId(lesson)),
+    downloadVideo: unsupported("Kyron videos are checked through their captions."),
+    readRenderedNarration: (lesson) => readKyronCaptions(requireDraftId(lesson)),
+  };
+}
+
+// QA_KYRON_WRITES / QA_KYRON_VIDEO: "off", "test-only" (drafts named
+// "[QA Test] …") or "all".
+function allowedFor(lesson: QaLesson, variable: string, fallback: "off" | "test-only"): boolean {
+  const mode = process.env[variable]?.trim() || fallback;
+
+  if (mode === "all") {
+    return true;
+  }
+
+  return mode === "test-only" && lesson.title.startsWith(TEST_CONTENT_PREFIX);
+}
+
+async function workspaceReferences(lesson: QaLesson, known?: DraftWorkspace) {
+  if (!lesson.workspaceId) {
+    return [];
+  }
+
+  const workspace = known ?? (await requireWorkspace(lesson));
+
+  return loadWorkspaceReferences({
+    ownerId: lesson.ownerId,
+    sourceText: workspace.sourceText,
+    workspaceId: workspace.id,
+  });
+}
 
 async function requireWorkspace(lesson: QaLesson): Promise<DraftWorkspace> {
   const workspace = lesson.workspaceId
@@ -145,11 +211,12 @@ async function requireWorkspace(lesson: QaLesson): Promise<DraftWorkspace> {
   return workspace;
 }
 
-function notMapped(): never {
-  throw new KyronMcpError(
-    "KYRON_MCP_NOT_CONFIGURED",
-    "Waiting for Kyron MCP lesson access. Until it is connected, paste the generated lesson content on the workspace page to check it.",
-  );
+function requireDraftId(lesson: QaLesson): number {
+  if (!lesson.kyronLessonId) {
+    throw new ContentSourceUnavailableError("This QA record is not linked to a Kyron draft.");
+  }
+
+  return lesson.kyronLessonId;
 }
 
 function unsupported(message: string) {

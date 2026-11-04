@@ -33,7 +33,7 @@ describe("Kyron OAuth authorization request", () => {
     );
   });
 
-  it("builds a PKCE request for read scope without a resource parameter", () => {
+  it("builds a PKCE request for read and write scope without a resource parameter", () => {
     const pending = createPendingAuthorization(clientId, redirectUri, now);
     const url = buildAuthorizationUrl(server, pending);
 
@@ -42,7 +42,7 @@ describe("Kyron OAuth authorization request", () => {
       response_type: "code",
       client_id: clientId,
       redirect_uri: redirectUri,
-      scope: "read",
+      scope: "read write",
       state: pending.state,
       code_challenge: codeChallengeFor(pending.codeVerifier),
       code_challenge_method: "S256",
@@ -164,7 +164,7 @@ describe("Kyron OAuth token handling", () => {
       accessToken: "access-2",
       refreshToken: "refresh-1",
       tokenType: "Bearer",
-      scope: "read",
+      scope: "read write",
       expiresAt: null,
     });
     expect(parseTokenResponse({ access_token: "x", token_type: "mac" }, now, null)).toBeNull();

@@ -271,6 +271,7 @@ export function stageForStep(step: QaStep): QaRunStage {
     case "decide":
       return "checking";
     case "revise":
+    case "verify":
     case "recheck":
       return "repairing";
     case "video_request":

@@ -1,6 +1,10 @@
 import { parseJsonResponse } from "@/features/drafts/shared/api-response";
 import type {
+  CreateQaDefectRequest,
+  ProductionJobListResponse,
   QaAuditRequest,
+  QaDefect,
+  QaDefectListResponse,
   QaDomain,
   QaEscalationListResponse,
   QaFindingDecisionRequest,
@@ -82,6 +86,22 @@ export function recordQaAudit(runId: string, request: QaAuditRequest) {
 
 export function contentVersionDownloadUrl(versionId: string): string {
   return `/api/qa/content-versions/${versionId}?download=1`;
+}
+
+export function listProductionJobs(signal?: AbortSignal) {
+  return getJson<ProductionJobListResponse>("/api/production", signal);
+}
+
+export function listQaDefects(signal?: AbortSignal) {
+  return getJson<QaDefectListResponse>("/api/qa/defects", signal);
+}
+
+export function createQaDefect(request: CreateQaDefectRequest) {
+  return postJson<QaDefect>("/api/qa/defects", request);
+}
+
+export function defectsExportUrl(format: "csv" | "json"): string {
+  return `/api/qa/defects/export?format=${format}`;
 }
 
 export function approveQaRubric(domain: QaDomain) {

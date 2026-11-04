@@ -53,12 +53,14 @@ export const PENDING_AUTHORIZATION_COOKIE = "kyron_oauth_pending";
 export const PENDING_AUTHORIZATION_COOKIE_PATH = "/api/kyron-mcp/oauth";
 
 const AUTHORIZATION_SERVER_CACHE_MS = 60 * 60 * 1000;
-// The only Kyron tools that change content which QA may call.
+// The only Kyron tools that change content or start work which QA may call.
 const QA_WRITE_TOOLS = new Set([
   "update_lesson_activity",
   "update_lesson",
   "update_lesson_section",
   "update_vocabulary_item",
+  // Renders video for the lesson; used only after its script passes QA.
+  "regenerate_all_lesson_videos",
 ]);
 
 export function getKyronClientMetadataSetup(): KyronClientMetadataSetup {

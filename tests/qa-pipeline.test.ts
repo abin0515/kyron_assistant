@@ -9,6 +9,9 @@ import type { DraftWorkspace, QaFinding, QaLesson, QaLessonSnapshot } from "@/ty
 const mocks = vi.hoisted(() => ({
   setupSource: null as unknown,
   kyronSource: null as unknown,
+  budgetProblem: null as string | null,
+  verdict: "resolves" as string,
+  transcripts: [] as string[],
 }));
 
 vi.mock("server-only", () => ({}));
@@ -22,18 +25,62 @@ vi.mock("@/server/drafts/workspaces/repository", () => ({
   updateDraftWorkspace: vi.fn(),
 }));
 vi.mock("@/server/qa/workspace-references", () => ({ loadWorkspaceReferences: vi.fn(async () => []) }));
+vi.mock("@/server/kyron-mcp/service", async () => {
+  const { KyronMcpError } = await import("@/server/kyron-mcp/errors");
+  const notConnected = async () => {
+    throw new KyronMcpError("KYRON_MCP_NOT_CONNECTED", "Kyron is not connected. Use Connect Kyron first.");
+  };
+
+  return { withKyronReader: notConnected, withKyronWriter: notConnected, hasKyronWriteAccess: async () => false };
+});
+vi.mock("@/server/production/service", () => ({
+  courseBudgetProblem: async () => mocks.budgetProblem,
+  ensureProductionJob: async () => undefined,
+}));
+vi.mock("@/server/qa/defects", () => ({ recordDefect: vi.fn() }));
+vi.mock("@/server/qa/verifier", () => ({
+  VERIFIER_NAME: "QA verifier",
+  verifyChanges: async ({ changes }: { changes: unknown[] }) => ({
+    verdicts: changes.map((_, index) => ({ index, verdict: mocks.verdict, explanation: "Checked against the reference." })),
+    usage: { purpose: "qa.verify", inputTokens: 30, outputTokens: 10, reasoningTokens: 5 },
+  }),
+}));
+vi.mock("@/server/qa/evaluators/media", () => ({
+  evaluateNarrationMatch: async (_snapshot: unknown, transcript: string) => {
+    const wrong = transcript.includes("MISMATCH");
+
+    return {
+      checks: [{ criterionId: "media.narration-match", evaluator: "media", activityId: null, status: wrong ? "fail" : "pass", summary: "" }],
+      findings: wrong
+        ? [{
+            criterionId: "media.narration-match",
+            evaluator: "media",
+            activityId: null,
+            fieldPath: null,
+            severity: "major",
+            observedText: transcript,
+            expectedBehavior: "The video says the script.",
+            rationale: "The narration differs.",
+            evidence: [],
+            retest: "Render again.",
+          }]
+        : [],
+      usage: [],
+    };
+  },
+}));
 
 vi.mock("@/server/qa/content-sources", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/server/qa/content-sources")>();
 
   return {
     ...original,
-    getContentSource: (kind: "manual" | "kyron_mcp" | "workspace_setup") => {
+    resolveContentSource: async (kind: "manual" | "kyron_mcp" | "workspace_setup", lesson: QaLesson) => {
       if (kind === "workspace_setup") {
         return mocks.setupSource;
       }
 
-      return kind === "kyron_mcp" && mocks.kyronSource ? mocks.kyronSource : original.getContentSource(kind);
+      return kind === "kyron_mcp" && mocks.kyronSource ? mocks.kyronSource : original.resolveContentSource(kind, lesson);
     },
   };
 });
@@ -60,7 +107,7 @@ vi.mock("@/server/qa/revision-agent", async (importOriginal) => {
   return {
     ...original,
     reviseContent: async ({ findings, snapshot }: { findings: QaFinding[]; snapshot: QaLessonSnapshot }) => ({
-      revisions: findings.map((finding) => fakeRevision(finding, snapshot)),
+      revisions: findings.flatMap((finding) => fakeRevision(finding, snapshot) ?? []),
       unresolved: [],
       usage: { purpose: "qa.revision", inputTokens: 40, outputTokens: 20, reasoningTokens: 5 },
       model: "gpt-6-luna",
@@ -104,7 +151,11 @@ beforeEach(() => {
   store.reset();
   delete process.env.QA_RUN_TOKEN_BUDGET;
   process.env.QA_AUDIT_RATE = "0";
+  process.env.QA_VIDEO_POLL_MS = "0";
   mocks.kyronSource = null;
+  mocks.budgetProblem = null;
+  mocks.verdict = "resolves";
+  mocks.transcripts = [];
 });
 
 afterEach(() => {
@@ -226,7 +277,7 @@ describe("generated-lesson QA", () => {
     const finished = await runToCompletion(run.id);
 
     expect(finished.stage).toBe("blocked");
-    expect(finished.stageMessage).toContain("Waiting for Kyron MCP lesson access");
+    expect(finished.stageMessage).toContain("Kyron is not connected");
   });
 
   it("proposes fixes for pasted lesson content without changing it", async () => {
@@ -305,6 +356,84 @@ describe("generated-lesson QA", () => {
     expect((await versionsOf(finished.lessonId)).map((version) => version.author)).toEqual(["Kyron generation"]);
   });
 
+  it("fixes the scene that says the wrong thing, verifies it and records the scene change", async () => {
+    const kyron = fakeKyronSource(scenePacket());
+    const run = await startQaRun({
+      createdBy: "Tester",
+      lesson: await saveLesson("ws-1"),
+      snapshot: null,
+      source: "kyron_mcp",
+      target: "lesson",
+    });
+    const finished = await runToCompletion(run.id);
+    const [revised] = await versionsOf(finished.lessonId);
+
+    expect(finished.stage).toBe("passed");
+    expect(kyron.scene("s2")).toContain("does not always improve");
+    expect(kyron.scene("s1")).toBe("Overfitting means memorizing noise.");
+    expect(revised.changes).toMatchObject([{ activityId: "intro", fieldPath: "scenes.s2.narration" }]);
+    expect(finished.events.some((event) => event.message.startsWith("QA verifier: 1 resolves"))).toBe(true);
+    expect(finished.usageByPurpose["qa.verify"]).toMatchObject({ calls: 1 });
+  });
+
+  it("undoes a fix the independent check rejects and escalates it", async () => {
+    mocks.verdict = "introduces_error";
+
+    const kyron = fakeKyronSource(lessonPacket);
+    const run = await startQaRun({
+      createdBy: "Tester",
+      lesson: await saveLesson("ws-1"),
+      snapshot: null,
+      source: "kyron_mcp",
+      target: "lesson",
+    });
+    const finished = await runToCompletion(run.id);
+    const [reverted] = await versionsOf(finished.lessonId);
+
+    expect(kyron.narration()).toContain("always improves");
+    expect(kyron.narration()).not.toContain("does not always improve");
+    expect(finished.findings[0]).toMatchObject({ status: "escalated" });
+    expect(finished.findings[0].escalationReason).toContain("independent check rejected the fix");
+    expect(reverted).toMatchObject({ author: "QA verifier" });
+  });
+
+  it("renders the video after the script passes and re-renders once when the narration differs", async () => {
+    mocks.transcripts = ["MISMATCH: the avatar skipped a sentence", "Training accuracy does not always improve unseen performance."];
+
+    const kyron = fakeKyronSource(fixedPacket(), { video: true });
+    const run = await startQaRun({
+      createdBy: "Tester",
+      lesson: await saveLesson("ws-1"),
+      snapshot: null,
+      source: "kyron_mcp",
+      target: "lesson",
+    });
+    const finished = await runToCompletion(run.id);
+
+    expect(kyron.renders()).toBe(2);
+    expect(finished.videoRequests).toBe(2);
+    expect(finished.media).toMatchObject({ status: "checked", source: "kyron_mcp" });
+    expect(finished.findings.find((finding) => finding.evaluator === "media")).toMatchObject({ status: "fixed" });
+    expect(finished.stage).toBe("passed");
+  });
+
+  it("stops model calls once the course reaches its budget", async () => {
+    mocks.budgetProblem = "This course reached its model budget ($1.0000 of $1.00).";
+    fakeKyronSource(lessonPacket);
+
+    const run = await startQaRun({
+      createdBy: "Tester",
+      lesson: await saveLesson("ws-1"),
+      snapshot: null,
+      source: "kyron_mcp",
+      target: "lesson",
+    });
+    const finished = await runToCompletion(run.id);
+
+    expect(finished.stage).toBe("blocked");
+    expect(finished.stageMessage).toContain("model budget");
+  });
+
   it("blocks instead of skipping checks when the token budget runs out", async () => {
     process.env.QA_RUN_TOKEN_BUDGET = "1";
     fakeKyronSource(lessonPacket);
@@ -322,6 +451,31 @@ describe("generated-lesson QA", () => {
     expect(finished.stageMessage).toContain("token budget");
   });
 });
+
+// The lesson as Kyron returns it: narration lives in scenes.
+function scenePacket(): LessonPacket {
+  const scenes = [
+    { id: "s1", part: "lecture_video", title: "Overfitting", onScreenText: null, narration: "Overfitting means memorizing noise.", hasVideo: false },
+    { id: "s2", part: "lecture_video", title: "Accuracy", onScreenText: null, narration: "Increasing training accuracy always improves performance on unseen data.", hasVideo: false },
+  ];
+
+  return {
+    ...lessonPacket,
+    activities: [{
+      ...lessonPacket.activities[0],
+      narration: scenes.map((scene) => scene.narration).join("\n\n"),
+      scenes,
+      readOnlyFields: ["narration", "onScreenText"],
+    }],
+  };
+}
+
+function fixedPacket(): LessonPacket {
+  return {
+    ...lessonPacket,
+    activities: [{ ...lessonPacket.activities[0], narration: "Training accuracy does not always improve unseen performance." }],
+  };
+}
 
 async function runToCompletion(runId: string) {
   for (let step = 0; step < 60; step += 1) {
@@ -408,8 +562,9 @@ function fakeSetupSource(overrides: { learningObjective: string; description?: s
   };
 }
 
-function fakeKyronSource(initial: LessonPacket) {
+function fakeKyronSource(initial: LessonPacket, { video = false } = {}) {
   let current = structuredClone(initial);
+  let renders = 0;
   const unused = async () => {
     throw new Error("not used");
   };
@@ -418,7 +573,7 @@ function fakeKyronSource(initial: LessonPacket) {
     kind: "kyron_mcp",
     readable: true,
     writable: true,
-    supportsVideo: false,
+    supportsVideo: video,
     readLesson: async () => structuredClone(current),
     readField: async (_lesson, activityId, fieldPath) => {
       const activity = current.activities.find((candidate) => candidate.id === activityId);
@@ -433,12 +588,19 @@ function fakeKyronSource(initial: LessonPacket) {
         ),
       };
     },
-    requestVideo: unused,
-    getVideoStatus: unused,
+    requestVideo: async () => {
+      renders += 1;
+
+      return `render-${renders}`;
+    },
+    getVideoStatus: async () => "done" as const,
     downloadVideo: unused,
+    readRenderedNarration: async () => mocks.transcripts[renders - 1] ?? "",
   } satisfies LessonContentSource;
 
   return {
+    renders: () => renders,
+    scene: (id: string) => current.activities[0].scenes?.find((scene) => scene.id === id)?.narration ?? "",
     narration: () => current.activities[0].narration ?? "",
     setNarration: (value: string) => {
       current = { ...current, activities: current.activities.map((activity) => ({ ...activity, narration: value })) };
@@ -447,18 +609,26 @@ function fakeKyronSource(initial: LessonPacket) {
 }
 
 // Setup findings take the checker's suggestion; lesson findings correct the
-// overfitting claim in the narration.
-function fakeRevision(finding: QaFinding, snapshot: QaLessonSnapshot): Revision {
+// overfitting claim, in the scene that says it when the lesson has scenes.
+// Narration-match findings get no text fix (the video is rendered again).
+function fakeRevision(finding: QaFinding, snapshot: QaLessonSnapshot): Revision | null {
   if (finding.proposedPatch) {
     return { ...finding.proposedPatch, findingIds: [finding.id] };
   }
 
-  const current = snapshot.activities.find((activity) => activity.id === finding.activityId)?.narration ?? "";
+  const activity = snapshot.activities.find((candidate) => candidate.id === finding.activityId);
+
+  if (!activity) {
+    return null;
+  }
+
+  const scene = activity.scenes?.find((candidate) => candidate.narration?.includes("always improves"));
+  const current = scene ? (scene.narration ?? "") : (activity.narration ?? "");
 
   return {
     findingIds: [finding.id],
     activityId: finding.activityId,
-    fieldPath: "narration",
+    fieldPath: scene ? `scenes.${scene.id}.narration` : "narration",
     currentValue: current,
     proposedValue: current.replace("always improves", "does not always improve"),
     rationale: "Agree with the reference.",

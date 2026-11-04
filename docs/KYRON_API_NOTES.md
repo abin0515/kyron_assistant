@@ -141,6 +141,29 @@ undocumented `/api/v1` endpoints, so the launcher may use it.
   **Kyron connection** page lists them and can download a dated capability
   manifest.
 
+### Connected and mapped — November 2, 2026
+
+- Kyron accepted the client file only when served as `application/json`
+  (GitHub raw gists are `text/plain` and were rejected as "unknown client").
+- 103 tools, 39 read-only. The QA harness reads with `get_lesson_collection`,
+  `get_lesson`, `list_lesson_sections`, `list_lesson_activities`,
+  `get_lesson_activity`, `list_vocabulary_items`, `get_lesson_lock_version` and
+  `validate_lesson`.
+- It writes only with `update_lesson_activity` (scene `scene_narration`,
+  `scene_title`, `scene_text` per video part; `content`; `question`; `answer`;
+  `responses[].is_correct`), `update_lesson`, `update_lesson_section`,
+  `update_vocabulary_item`, and renders with `regenerate_all_lesson_videos`.
+  Every lesson edit sends `lesson_lock_version`; Kyron answers 409 when the
+  lesson changed since it was read.
+- Scene narration and on-screen text are stored as HTML (`<p>`, `<ul><li>`);
+  edits keep that format. A lecture's `content` is its scenes' narration in
+  order and is updated with the scene.
+- With read permission, `get_lesson_segment` and
+  `get_lesson_segment_transcript` return "Access forbidden"; scene caption
+  files (`scene_captions_vtt_url`, signed links) carry the rendered narration.
+- `validate_lesson` lists missing videos until rendering finishes.
+- Kyron's `citations` field was empty for the generated draft.
+
 ## API gaps for future workflow
 
 The current public API document still does not provide operations to:

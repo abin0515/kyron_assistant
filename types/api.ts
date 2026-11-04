@@ -952,6 +952,82 @@ export type QaMetricsResponse = {
   generatedAt: string;
 };
 
+// One course moving through the production pipeline, from its course setup
+// to a reviewed, rendered Kyron lesson.
+export type ProductionStage =
+  | "setup"
+  | "generating"
+  | "lesson_qa"
+  | "video"
+  | "review"
+  | "ready"
+  | "blocked";
+
+export type ProductionJob = {
+  id: string;
+  workspaceId: string;
+  ownerId: string;
+  title: string;
+  stage: ProductionStage;
+  stageMessage: string;
+  // What a person still has to do; empty while the pipeline works alone.
+  needs: string[];
+  kyronDraftId: number | null;
+  setupRunId: string | null;
+  lessonRunId: string | null;
+  costUsd: number;
+  budgetUsd: number;
+  events: Array<{ at: string; stage: ProductionStage; message: string }>;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ProductionJobListResponse = {
+  jobs: ProductionJob[];
+};
+
+export type QaDefectStage = "setup" | "lesson" | "video" | "harness";
+
+export type QaDefectCategory =
+  | "qa_missed"
+  | "false_alarm"
+  | "wrong_fix"
+  | "harness_bug"
+  | "kyron_output"
+  | "source_problem"
+  | "cost_or_performance";
+
+export type QaDefect = {
+  id: string;
+  workspaceId: string | null;
+  runId: string | null;
+  findingId: string | null;
+  stage: QaDefectStage;
+  category: QaDefectCategory;
+  severity: QaSeverity;
+  status: "open" | "triaged" | "resolved";
+  origin: "reviewer" | "rejected_finding" | "audit";
+  title: string;
+  expected: string;
+  actual: string;
+  evidence: string;
+  rootCause: string;
+  createdBy: string;
+  createdAt: string;
+};
+
+export type QaDefectListResponse = {
+  defects: QaDefect[];
+};
+
+export type CreateQaDefectRequest = Pick<
+  QaDefect,
+  "stage" | "category" | "severity" | "title" | "expected" | "actual" | "evidence"
+> & {
+  workspaceId: string | null;
+  runId: string | null;
+};
+
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
 export type LogCategory =

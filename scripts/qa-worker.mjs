@@ -10,7 +10,7 @@ if (!secret || secret.startsWith("replace_with")) {
   throw new Error("CRON_SECRET is not configured in .env.local.");
 }
 
-console.log(`QA worker: calling ${baseUrl}/api/qa/driver (Ctrl+C to stop).`);
+console.log(`Production worker: calling ${baseUrl}/api/qa/driver (Ctrl+C to stop).`);
 
 for (;;) {
   let delay = IDLE_DELAY_MS;
@@ -25,7 +25,7 @@ for (;;) {
       const { processed } = await response.json();
 
       if (processed > 0) {
-        console.log(`${new Date().toLocaleTimeString()} advanced ${processed} run(s).`);
+        console.log(`${new Date().toLocaleTimeString()} advanced ${processed} item(s) (runs, Kyron drafts, production jobs).`);
         delay = BUSY_DELAY_MS;
       }
     } else {

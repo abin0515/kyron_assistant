@@ -69,12 +69,17 @@ export async function evaluateAssessment({
   activityIds,
   snapshot,
 }: EvaluationInput): Promise<EvaluationOutput> {
+  // Open questions (conversations) have no options; the tutor grades them.
   const questions = snapshot.activities.filter(
     (activity) =>
-      activity.question && (!activityIds || activityIds.includes(activity.id)),
+      (activity.question?.options.length ?? 0) > 0 && (!activityIds || activityIds.includes(activity.id)),
   );
   const gradable = questions.filter((activity) => (activity.question?.answerKey.length ?? 0) > 0);
   const ungradable = questions.filter((activity) => !gradable.includes(activity));
+
+  if (questions.length === 0 && activityIds === null) {
+    return { checks: noQuestionChecks(), findings: [], usage: [] };
+  }
 
   if (gradable.length === 0) {
     return { checks: ungradable.flatMap(notTestedChecks), findings: [], usage: [] };
@@ -246,6 +251,15 @@ function verdictFindings(
       evidence,
       retest: "Re-solve the question without the key and confirm only one option is defensible.",
     },
+  ];
+}
+
+function noQuestionChecks(): CheckDraft[] {
+  const summary = "The lesson has no multiple-choice questions to grade.";
+
+  return [
+    { criterionId: "assessment.key-correct", evaluator: "assessment", activityId: null, status: "not_applicable", summary },
+    { criterionId: "assessment.single-best-answer", evaluator: "assessment", activityId: null, status: "not_applicable", summary },
   ];
 }
 

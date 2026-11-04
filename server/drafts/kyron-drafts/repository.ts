@@ -231,6 +231,38 @@ export async function listDraftsByIds(
   return rows.map(toStoredDraft);
 }
 
+// Drafts Kyron is still generating, for every owner, least recently checked
+// first. Used by the server-side status poller.
+export async function listGeneratingDrafts(limit: number, minAgeSeconds: number): Promise<StoredDraft[]> {
+  const rows = (await getDatabase()`
+    SELECT
+      kyron_draft_id,
+      name,
+      asset_type,
+      status,
+      status_message,
+      preview_url,
+      editor_url,
+      kyron_created_at,
+      kyron_updated_at,
+      kyron_availability,
+      kyron_checked_at,
+      created_by_id,
+      created_by_name,
+      created_by_email,
+      record_created_at,
+      record_updated_at
+    FROM drafts
+    WHERE status = 'started'
+      AND kyron_availability <> 'unavailable'
+      AND (kyron_checked_at IS NULL OR kyron_checked_at < NOW() - (${minAgeSeconds} * INTERVAL '1 second'))
+    ORDER BY kyron_checked_at ASC NULLS FIRST
+    LIMIT ${limit}
+  `) as DraftRow[];
+
+  return rows.map(toStoredDraft);
+}
+
 export async function listDraftsForSynchronization(
   userId: string,
   generatingOnly: boolean,
