@@ -8,12 +8,14 @@ import { evaluateAssessment } from "./assessment";
 import { evaluateConsistency } from "./consistency";
 import { evaluateCourseSetup } from "./course-setup";
 import { evaluateFidelity } from "./fidelity";
+import { evaluateLength } from "./length";
 import { evaluateStructure } from "./structural";
 import type { EvaluationInput, EvaluationOutput } from "./types";
 
 // Cheap exact rules first, then model checks.
 export const SCRIPT_EVALUATOR_ORDER: readonly ScriptEvaluatorId[] = [
   "structural",
+  "length",
   "assessment",
   "fidelity",
   "consistency",
@@ -28,6 +30,7 @@ export function evaluatorOrderFor(target: QaRunTarget): readonly ScriptEvaluator
 export const LESSON_LEVEL_EVALUATORS: ReadonlySet<ScriptEvaluatorId> = new Set([
   "course_setup",
   "structural",
+  "length",
   "alignment",
 ]);
 
@@ -37,6 +40,7 @@ export const SCRIPT_EVALUATORS: Record<
 > = {
   course_setup: evaluateCourseSetup,
   structural: evaluateStructure,
+  length: evaluateLength,
   assessment: evaluateAssessment,
   fidelity: evaluateFidelity,
   consistency: evaluateConsistency,
@@ -50,12 +54,12 @@ export function evaluatorsAffectedBy(fieldPath: string): ScriptEvaluatorId[] {
   }
 
   if (fieldPath.startsWith("question.")) {
-    return ["structural", "assessment", "consistency", "fidelity"];
+    return ["structural", "length", "assessment", "consistency", "fidelity"];
   }
 
   if (fieldPath === "tutorGuidance") {
     return ["structural", "consistency"];
   }
 
-  return ["structural", "fidelity", "consistency", "alignment"];
+  return ["structural", "length", "fidelity", "consistency", "alignment"];
 }

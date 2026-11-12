@@ -4,6 +4,7 @@ import { requestErrorResponse } from "@/server/http/api-response";
 import { hasSameOrigin } from "@/server/http/request-origin";
 import { getCurrentUser } from "@/server/identity/current-user";
 import { isRecordId, qaErrorResponse, qaJson, type QaRouteContext } from "@/server/qa/http";
+import { MEDIA_UPLOAD_UNAVAILABLE, mediaUploadAvailable } from "@/server/qa/media-upload";
 import { attachMedia } from "@/server/qa/service";
 import type { QaRunDetailResponse } from "@/types/api";
 
@@ -19,6 +20,12 @@ export async function POST(request: NextRequest, context: QaRouteContext<{ id: s
 
   if (!isRecordId(id)) {
     return requestErrorResponse("Run ID is invalid.");
+  }
+
+  // Answered before the body is read: Vercel refuses bodies over 4.5 MB and
+  // has no lasting disk to keep the file for the later check.
+  if (!mediaUploadAvailable()) {
+    return requestErrorResponse(MEDIA_UPLOAD_UNAVAILABLE, 501);
   }
 
   try {

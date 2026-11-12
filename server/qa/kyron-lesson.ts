@@ -7,8 +7,7 @@ import { withKyronReader, withKyronWriter } from "@/server/kyron-mcp/service";
 import type { KyronToolReader } from "@/server/kyron-mcp/types";
 import type { QaActivity, QaActivityType, QaLessonContent, QaQuestion, QaScene } from "@/types/api";
 
-import { ContentConflictError } from "./content-errors";
-import type { VideoJobStatus } from "./content-sources";
+import { ContentConflictError, RenderNotSentError } from "./content-errors";
 import { MAX_FIELD_LENGTH, readActivityField, readLessonField, replaceOnce } from "./snapshot";
 import type { LessonPacket } from "./types";
 
@@ -47,7 +46,7 @@ export type KyronLesson = {
   lessonType: string | null;
 };
 
-export type KyronSection = { id: number; position: number; objectives: string[] };
+export type KyronSection = { id: number; position: number; topic: string | null; objectives: string[] };
 
 export type KyronScene = {
   id: string;
@@ -74,6 +73,8 @@ export type KyronActivity = {
   responses: Array<{ id: number | null; text: string; correct: boolean }>;
   knowledge: Array<{ knowledge: string; misconceptions: string[] }>;
   scenes: KyronScene[];
+  sectionId: number | null;
+  questionBankSize: number;
 };
 
 export type KyronTerm = { id: number; term: string; definition: string | null };
@@ -92,19 +93,11 @@ export async function readKyronLessonData(draftId: number): Promise<KyronLessonD
   return withKyronReader(async (read) => {
     const collection = await readCollection(read, draftId);
     const lesson = parseLesson(await read("get_lesson", { id: collection.lessonId }));
-    const sections = parseSections(
-      await read("list_lesson_sections", { lesson_id: lesson.id, per_page: PAGE_SIZE }),
-    ).sort((left, right) => left.position - right.position);
+    const { activities: listed, sections } = await listActivities(read, lesson.id);
     const activities: KyronActivity[] = [];
 
-    for (const section of sections) {
-      const listed = parseActivityIds(
-        await read("list_lesson_activities", { lesson_id: lesson.id, lesson_section_id: section.id }),
-      );
-
-      for (const id of listed.slice(0, MAX_ACTIVITIES - activities.length)) {
-        activities.push(parseActivity(await read("get_lesson_activity", { id })));
-      }
+    for (const { id } of listed) {
+      activities.push(parseActivity(await read("get_lesson_activity", { id })));
     }
 
     return {
@@ -187,28 +180,321 @@ export async function writeKyronField(
 
 // Starts Kyron's render of every video in the lesson. Called only after the
 // script passed QA, and at most twice per run.
+// Anything that fails before the render tool is called is a RenderNotSentError,
+// so it can be retried; once the call started, Kyron may have taken it.
 export async function requestKyronRender(draftId: number): Promise<string> {
-  return withKyronWriter(async ({ read, write }) => {
+  let sending = false;
+
+  try {
+    return await withKyronWriter(async ({ read, write }) => {
+      const { lessonId } = await readCollection(read, draftId);
+
+      sending = true;
+      await write("regenerate_all_lesson_videos", { id: lessonId });
+
+      return `kyron-render:${lessonId}:${Date.now()}`;
+    });
+  } catch (error) {
+    throw sending ? error : new RenderNotSentError(error);
+  }
+}
+
+// Where Kyron's render stands. Kyron's publish check lists the videos still
+// missing while it renders; each video part also carries its own status
+// ("ok", "error", or null when not rendered). A video that fails can keep its
+// old file, so the publish check alone would call the render done.
+// While the publish check lists missing videos, only activities in error are
+// read in full. Once it is clear, a full check reads every activity in full,
+// and the light checks in between (see LIGHT_CHECKS_BETWEEN_FULL) only the
+// ones whose list status is neither "ok" nor empty, old errors, and videos
+// last seen rendering. A light check's "done" or "failed" is confirmed by reading the
+// rest in full, unless resultCounts is false (the caller ignores it anyway).
+// memory: what the earlier checks of this render saw (see KyronRenderMemory).
+export async function readKyronRenderStatus(
+  draftId: number,
+  memory: KyronRenderMemory = NO_RENDER_MEMORY,
+  { resultCounts = true }: { resultCounts?: boolean } = {},
+): Promise<KyronRenderStatus> {
+  return withKyronReader(async (read) => {
     const { lessonId } = await readCollection(read, draftId);
+    const problems = parseVideoProblems(await read("validate_lesson", { id: lessonId }));
+    const { activities } = await listActivities(read, lessonId);
+    const clear = problems.length === 0;
+    const full = clear && !lightCheckAllowed(memory);
+    const watched = new Set([...memory.staleFailures, ...(memory.renderingIds ?? [])]);
+    const states: KyronRenderActivity[] = [];
 
-    await write("regenerate_all_lesson_videos", { id: lessonId });
+    for (const activity of activities) {
+      const inFull = clear
+        ? full || !looksSettled(activity.status) || watched.has(activity.id)
+        : isFailedStatus(activity.status);
 
-    return `kyron-render:${lessonId}:${Date.now()}`;
+      states.push(await renderState(read, activity, inFull));
+    }
+
+    let decision = decideRenderStatus(problems, states, memory);
+    let readAll = states.every((state) => state.videos !== null);
+
+    // Read the activities a light check skipped before its verdict counts,
+    // deciding again from the same memory.
+    if (clear && !readAll && resultCounts && decision.status.status !== "pending") {
+      for (const [index, state] of states.entries()) {
+        states[index] = state.videos === null ? await renderState(read, state, true) : state;
+      }
+
+      decision = decideRenderStatus(problems, states, memory);
+      readAll = true;
+    }
+
+    return {
+      status: decision.status,
+      memory: {
+        ...decision.memory,
+        // After a check with videos listed missing, the next clear one is full.
+        ...(clear ? { checksSinceFull: full || readAll ? 0 : (memory.checksSinceFull ?? 0) + 1 } : {}),
+        renderingIds: states.filter(showsRendering).map((state) => state.id),
+      },
+    };
   });
 }
 
-// Kyron's own publish check lists missing videos until rendering finishes.
-export async function readKyronRenderStatus(draftId: number): Promise<VideoJobStatus> {
+// One activity's render state: from its list entry, or read in full with
+// each video part's status.
+async function renderState(
+  read: KyronToolReader,
+  activity: Pick<KyronRenderActivity, "id" | "name" | "status">,
+  inFull: boolean,
+): Promise<KyronRenderActivity> {
+  const record = inFull ? asRecord(await read("get_lesson_activity", { id: activity.id })) : null;
+
+  return {
+    id: activity.id,
+    name: activity.name,
+    status: readText(record?.status) ?? activity.status,
+    videos: record ? parseVideoParts(record) : null,
+  };
+}
+
+// A light check is allowed only on memory from the checks that write it, and
+// at most LIGHT_CHECKS_BETWEEN_FULL times in a row.
+function lightCheckAllowed(memory: KyronRenderMemory): boolean {
+  const since = memory.checksSinceFull;
+
+  return (
+    Array.isArray(memory.renderingIds) &&
+    typeof since === "number" &&
+    Number.isSafeInteger(since) &&
+    since >= 0 &&
+    since < LIGHT_CHECKS_BETWEEN_FULL
+  );
+}
+
+// "ok", or no status yet: a list entry that shows nothing to look at.
+function looksSettled(status: string | null): boolean {
+  return status === null || status === "ok";
+}
+
+// The activities in error just before a render is requested (one call per
+// topic): their error belongs to an earlier render.
+export async function readKyronFailedVideos(draftId: number): Promise<number[]> {
   return withKyronReader(async (read) => {
     const { lessonId } = await readCollection(read, draftId);
-    const problems = await read("validate_lesson", { id: lessonId });
-    const names = (Array.isArray(problems) ? problems : []).map((problem) => readText(asRecord(problem)?.name) ?? "");
 
-    if (names.some((name) => /video/i.test(name) && /fail/i.test(name))) {
-      return "failed";
+    return (await listActivities(read, lessonId)).activities
+      .filter((activity) => isFailedStatus(activity.status))
+      .map((activity) => activity.id);
+  });
+}
+
+// inProgress is false when the render only waits on videos that still show
+// an earlier render's error: that alone does not show this render running.
+type RenderResult =
+  | { status: "pending"; inProgress: boolean; detail?: string }
+  | { status: "done" }
+  | { status: "failed"; message: string };
+
+// Kept between the checks of one render:
+// - staleFailures: activities whose video had already failed before this
+//   render and have not been seen rendering again since;
+// - sawRendering: another video was seen rendering during this render;
+// - staleWaits: checks in a row where only those stale videos were left;
+// - checksSinceFull: light checks in a row since every activity was last read
+//   in full (missing: the next check with the publish check clear is full);
+// - renderingIds: activities the last check saw rendering on a video part,
+//   read in full by the light checks that follow.
+export type KyronRenderMemory = {
+  staleFailures: number[];
+  sawRendering: boolean;
+  staleWaits: number;
+  checksSinceFull?: number;
+  renderingIds?: number[];
+};
+
+export type KyronRenderStatus = { status: RenderResult; memory: KyronRenderMemory };
+
+export const NO_RENDER_MEMORY: KyronRenderMemory = { staleFailures: [], sawRendering: false, staleWaits: 0 };
+
+// Checks (30 s apart) a video still showing its old error is waited on once
+// nothing else is left: after other videos were seen rendering, and when none
+// were (Kyron kept every old file; the first render took 16 minutes).
+const STALE_WAITS_AFTER_RENDERING = 10;
+const STALE_WAITS_WITHOUT_RENDERING = 40;
+
+// With the publish check clear, every activity is read in full on the first
+// check and after this many light checks in a row (about every 2 minutes). In
+// between, an activity whose list says "ok" may show rendering or failing
+// only on a video part; the next full check, or the confirmation before a
+// verdict that counts, finds it.
+const LIGHT_CHECKS_BETWEEN_FULL = 3;
+
+export type KyronVideoProblem = { name: string; activityIds: number[] };
+
+// Render state only: kept apart from the lesson content, so a render never
+// looks like a content change.
+export type KyronRenderActivity = {
+  id: number;
+  name: string;
+  status: string | null;
+  // Each video part's status; null when the activity was not read in full.
+  videos: Array<{ part: string; status: string | null; narrated: boolean }> | null;
+};
+
+const MAX_NAMED_VIDEOS = 3;
+const MAX_VIDEO_NAME_LENGTH = 60;
+
+export function decideRenderStatus(
+  problems: KyronVideoProblem[],
+  activities: KyronRenderActivity[],
+  memory: KyronRenderMemory = NO_RENDER_MEMORY,
+): KyronRenderStatus {
+  // An activity still in error since before the render has not been seen
+  // rendering again: its error is the earlier render's. Once it shows
+  // anything else, a later error is this render's.
+  const stale = new Set(
+    memory.staleFailures.filter((id) => activities.some((activity) => activity.id === id && stillInError(activity))),
+  );
+  const waiting = activities.filter((activity) => stale.has(activity.id));
+  const failed = activities.filter((activity) => renderFailed(activity) && !stale.has(activity.id));
+  const failedIds = new Set(failed.map((activity) => activity.id));
+  const isFailure = (problem: KyronVideoProblem) => /fail/i.test(problem.name);
+  // Kyron's own "failed" problems, unless they only name stale activities.
+  const reported = problems.filter(
+    (problem) => isFailure(problem) && (problem.activityIds.length === 0 || problem.activityIds.some((id) => !stale.has(id))),
+  );
+  const othersRendering =
+    problems.some((problem) => !isFailure(problem) && problem.activityIds.length === 0) ||
+    problems.some((problem) => !isFailure(problem) && problem.activityIds.some((id) => !stale.has(id) && !failedIds.has(id))) ||
+    activities.some((activity) => !stale.has(activity.id) && showsRendering(activity));
+  const sawRendering = memory.sawRendering || othersRendering;
+  const result = (status: RenderResult, staleWaits = 0): KyronRenderStatus => ({
+    status,
+    memory: { staleFailures: [...stale], sawRendering, staleWaits },
+  });
+
+  if (othersRendering) {
+    return result({ status: "pending", inProgress: true });
+  }
+
+  // Everything else is over: a failure is reported now, with any video still
+  // showing an old error, instead of waiting on that one.
+  if (reported.length > 0 || failed.length > 0) {
+    const ids = new Set(reported.flatMap((problem) => problem.activityIds));
+    const named = activities.filter((activity) => ids.has(activity.id) || failedIds.has(activity.id) || stale.has(activity.id));
+
+    return result({
+      status: "failed",
+      message: named.length > 0 ? couldNotRender(named) : `Kyron reported: ${reported.map((problem) => problem.name).join("; ")}.`,
+    });
+  }
+
+  if (waiting.length > 0) {
+    const staleWaits = memory.staleWaits + 1;
+
+    return staleWaits >= (sawRendering ? STALE_WAITS_AFTER_RENDERING : STALE_WAITS_WITHOUT_RENDERING)
+      ? result({ status: "failed", message: `Kyron still shows an error for ${videoList(waiting)} after this render.` }, staleWaits)
+      : result(
+          { status: "pending", inProgress: false, detail: `${videoList(waiting)} still showed the error from before this render.` },
+          staleWaits,
+        );
+  }
+
+  return result({ status: "done" });
+}
+
+// Read in full, with a narrated video whose own status failed. The activity's
+// status only says which activities to read in full: it can stay "error"
+// while a video renders again or after it rendered. Wait videos have no
+// narration and are never rendered, so they do not count.
+function renderFailed(activity: KyronRenderActivity): boolean {
+  return (activity.videos ?? []).some((video) => video.narrated && isFailedStatus(video.status));
+}
+
+// Read in full, with a narrated video whose status is neither ready, failed
+// nor empty: Kyron is working on it.
+function showsRendering(activity: KyronRenderActivity): boolean {
+  return (activity.videos ?? []).some(
+    (video) => video.narrated && video.status !== null && video.status !== "ok" && !isFailedStatus(video.status),
+  );
+}
+
+// Still showing an error the same way a failure is judged (renderFailed);
+// from the list status alone when the activity was not read in full.
+function stillInError(activity: KyronRenderActivity): boolean {
+  return activity.videos ? renderFailed(activity) : isFailedStatus(activity.status);
+}
+
+function isFailedStatus(status: string | null): boolean {
+  return status !== null && /fail|error/i.test(status);
+}
+
+function couldNotRender(activities: KyronRenderActivity[]): string {
+  return `Kyron could not render the video${activities.length > 1 ? "s" : ""} for ${videoList(activities)}.`;
+}
+
+function videoList(activities: KyronRenderActivity[]): string {
+  const names = activities.slice(0, MAX_NAMED_VIDEOS).map((activity) => `"${shorten(activity.name || `Activity ${activity.id}`)}"`);
+  const more = activities.length - names.length;
+
+  return more > 0 ? `${names.join(", ")} and ${more} more` : joinNames(names);
+}
+
+function joinNames(names: string[]): string {
+  return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : (names[0] ?? "");
+}
+
+function shorten(text: string): string {
+  const trimmed = text.trim();
+
+  return trimmed.length > MAX_VIDEO_NAME_LENGTH ? `${trimmed.slice(0, MAX_VIDEO_NAME_LENGTH - 1).trimEnd()}…` : trimmed;
+}
+
+// The publish check's video problems, with the activities each one names.
+function parseVideoProblems(value: unknown): KyronVideoProblem[] {
+  return (Array.isArray(value) ? value : []).flatMap((item) => {
+    const record = asRecord(item);
+    const name = readText(record?.name) ?? "";
+
+    return /video/i.test(name)
+      ? [{ name, activityIds: (Array.isArray(record?.activity_ids) ? record.activity_ids : []).flatMap((id) => readId(id) ?? []) }]
+      : [];
+  });
+}
+
+function parseVideoParts(record: Record<string, unknown>): NonNullable<KyronRenderActivity["videos"]> {
+  return VIDEO_FIELDS.flatMap((field) => {
+    const part = asRecord(record[field]);
+
+    if (!part) {
+      return [];
     }
 
-    return names.some((name) => /video/i.test(name)) ? "pending" : "done";
+    const scenes = Array.isArray(part.scenes) ? part.scenes : [];
+
+    return [{
+      part: field,
+      status: readText(part.video_status),
+      narrated: scenes.some((scene) => Boolean(plainText(readText(asRecord(scene)?.scene_narration) ?? ""))),
+    }];
   });
 }
 
@@ -350,6 +636,9 @@ export function mapKyronActivity(activity: KyronActivity): QaActivity {
       ...(scenes.length > 0 ? ["narration", "onScreenText"] : []),
       ...(isConversation ? ["tutorGuidance"] : []),
     ],
+    kyronType: activity.type,
+    ...(activity.sectionId ? { sectionId: String(activity.sectionId) } : {}),
+    ...(isConversation ? { learnerTurns: Math.max(1, activity.questionBankSize) } : {}),
   };
 }
 
@@ -365,6 +654,11 @@ function mapLessonContent(lesson: KyronLesson, sections: KyronSection[]): QaLess
     learningObjectives: [...new Set(objectives)].map((objective) => limit(objective) ?? objective),
     durationSeconds: lesson.intendedTime,
     assetType: lesson.lessonType,
+    sections: sections.map((section) => ({
+      id: String(section.id),
+      topic: limit(section.topic),
+      objectives: section.objectives.map((objective) => limit(objective) ?? objective),
+    })),
   };
 }
 
@@ -482,21 +776,47 @@ function parseSections(value: unknown): KyronSection[] {
       ? [{
           id,
           position: typeof record.position === "number" ? record.position : index + 1,
+          topic: readText(record.topic),
           objectives: readTextList(record.structured_learning_objectives),
         }]
       : [];
   });
 }
 
-function parseActivityIds(value: unknown): number[] {
+type ListedActivity = { id: number; name: string; status: string | null };
+
+// The lesson's topics in order and their activities as listed (id, name and
+// status, without content), one call per topic.
+async function listActivities(
+  read: KyronToolReader,
+  lessonId: number,
+): Promise<{ sections: KyronSection[]; activities: ListedActivity[] }> {
+  const sections = parseSections(
+    await read("list_lesson_sections", { lesson_id: lessonId, per_page: PAGE_SIZE }),
+  ).sort((left, right) => left.position - right.position);
+  const activities: ListedActivity[] = [];
+
+  for (const section of sections) {
+    const listed = parseActivityList(
+      await read("list_lesson_activities", { lesson_id: lessonId, lesson_section_id: section.id }),
+    );
+
+    activities.push(...listed.slice(0, MAX_ACTIVITIES - activities.length));
+  }
+
+  return { sections, activities };
+}
+
+function parseActivityList(value: unknown): ListedActivity[] {
   if (!Array.isArray(value)) {
     throw invalid("activity list is missing");
   }
 
   return value.flatMap((item) => {
-    const id = readId(asRecord(item)?.id);
+    const record = asRecord(item);
+    const id = readId(record?.id);
 
-    return id ? [id] : [];
+    return id ? [{ id, name: readText(record?.name) ?? "", status: readText(record?.status) }] : [];
   });
 }
 
@@ -535,6 +855,8 @@ export function parseActivity(value: unknown): KyronActivity {
       },
     ),
     scenes: VIDEO_FIELDS.flatMap((field) => parseScenes(field, asRecord(record[field])?.scenes)),
+    sectionId: readId(record.lesson_section_id),
+    questionBankSize: readTextList(record.question_bank).length,
   };
 }
 
@@ -590,14 +912,29 @@ function parseVocabulary(value: unknown): KyronTerm[] {
   });
 }
 
+// A dropped connection, a timeout, a busy server (429) or a server error is
+// worth another try; any other refusal (an expired or missing link) is not.
 async function fetchCaptions(url: string): Promise<string> {
-  const response = await fetch(url, { signal: AbortSignal.timeout(CAPTIONS_TIMEOUT_MS) });
+  let response: Response;
+  let body: string;
 
-  if (!response.ok) {
-    throw new KyronMcpError("KYRON_MCP_UNAVAILABLE", `Kyron captions could not be downloaded (HTTP ${response.status}).`, true);
+  try {
+    response = await fetch(url, { signal: AbortSignal.timeout(CAPTIONS_TIMEOUT_MS) });
+    body = response.ok ? await response.text() : "";
+  } catch {
+    // The error itself is not kept: it could carry the signed link.
+    throw new KyronMcpError("KYRON_MCP_UNAVAILABLE", "Kyron captions could not be downloaded (network error or timeout).", true);
   }
 
-  return captionText(await response.text());
+  if (!response.ok) {
+    throw new KyronMcpError(
+      "KYRON_MCP_UNAVAILABLE",
+      `Kyron captions could not be downloaded (HTTP ${response.status}).`,
+      response.status === 429 || response.status >= 500,
+    );
+  }
+
+  return captionText(body);
 }
 
 // WebVTT to plain text: cue text only, without timings, numbers or tags.

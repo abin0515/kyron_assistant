@@ -7,3 +7,16 @@ export class ContentConflictError extends Error {
     this.name = "ContentConflictError";
   }
 }
+
+// Raised by a render request that failed before the request itself was sent
+// (signing in, connecting, reading the lesson): nothing was rendered, so it
+// may be retried without paying twice.
+export class RenderNotSentError extends Error {
+  readonly original: unknown;
+
+  constructor(original: unknown) {
+    super(original instanceof Error ? original.message : "The render request could not be sent.");
+    this.name = "RenderNotSentError";
+    this.original = original;
+  }
+}

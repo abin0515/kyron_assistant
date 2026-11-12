@@ -26,6 +26,7 @@ const STAGES: Record<QaRunStage, { label: string; variant: BadgeVariant }> = {
   repairing: { label: "Fixing", variant: "info" },
   video: { label: "Generating video", variant: "info" },
   media_check: { label: "Checking video", variant: "info" },
+  awaiting_approval: { label: "Awaiting your approval", variant: "warning" },
   passed: { label: "Passed", variant: "success" },
   verified: { label: "Verified", variant: "success" },
   changes_proposed: { label: "Changes proposed", variant: "warning" },

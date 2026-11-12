@@ -1,6 +1,7 @@
 import type {
   QaCheckResult,
   QaFinding,
+  QaLengthReport,
   QaLessonSnapshot,
   QaRubricPack,
 } from "@/types/api";
@@ -44,4 +45,6 @@ export type EvaluationOutput = {
   checks: CheckDraft[];
   findings: FindingDraft[];
   usage: UsageRecord[];
+  // Set by the length check; saved on the run for the module report.
+  lengths?: QaLengthReport;
 };

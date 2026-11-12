@@ -8,11 +8,16 @@ export const COURSE_BRIEF_MAX_LENGTH = 50_000;
 
 export const ASSET_TYPES = ["lesson", "practice", "scenario"] as const;
 export const DURATIONS = [480, 900, 1800, 3600] as const;
+// How long each asset should be; see lib/length-targets.ts for the minutes.
+export const LENGTH_LEVELS = ["brief", "normal", "detailed"] as const;
 export const UPLOAD_CONTENT_TYPES = [
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 ] as const;
 export const MAX_UPLOAD_SIZE_BYTES = 250 * 1024 * 1024;
+// The AI reads (extracts text from) source files up to this size; larger PDF
+// and PowerPoint files can still go to Kyron as the course material.
+export const MAX_AI_SOURCE_SIZE_BYTES = 50 * 1024 * 1024;
 export const KYRON_AVAILABILITIES = [
   "available",
   "unavailable",
@@ -31,6 +36,9 @@ export const SOURCE_FILE_USAGES = [
 
 export type AssetType = (typeof ASSET_TYPES)[number];
 export type Duration = (typeof DURATIONS)[number];
+export type LengthLevel = (typeof LENGTH_LEVELS)[number];
+// The three content types the length targets cover.
+export type AssetKind = "video" | "activity" | "practice";
 export type UploadContentType = (typeof UPLOAD_CONTENT_TYPES)[number];
 export type DraftStatus = "started" | "done" | "error";
 export type KyronAvailability =
@@ -642,6 +650,8 @@ export type KyronMcpToolCallResponse = {
 
 export type KyronClientMetadataSetup = {
   clientId: string | null;
+  // The deployed app serves the client file itself; nothing to host.
+  selfHosted: boolean;
   redirectUri: string;
   documentJson: string;
 };
@@ -700,6 +710,18 @@ export type QaActivity = {
   terms?: QaVocabularyTerm[];
   // Fields the source derives and cannot write.
   readOnlyFields?: string[];
+  // Kyron content: the raw activity type and the section (topic) it belongs to.
+  kyronType?: string;
+  sectionId?: string;
+  // Kyron conversations: one learner turn per question-bank item.
+  learnerTurns?: number;
+};
+
+// A Kyron lesson section: one topic with its learning objectives.
+export type QaLessonSection = {
+  id: string;
+  topic: string | null;
+  objectives: string[];
 };
 
 export type QaLessonContent = {
@@ -709,6 +731,8 @@ export type QaLessonContent = {
   learningObjectives: string[];
   durationSeconds: number | null;
   assetType: string | null;
+  // Kyron content: the lesson's sections (topics), in order.
+  sections?: QaLessonSection[];
 };
 
 export type QaReference = {
@@ -758,6 +782,7 @@ export type QaRunStage =
   | "repairing"
   | "video"
   | "media_check"
+  | "awaiting_approval"
   | "passed"
   | "changes_proposed"
   | "incomplete"
@@ -769,6 +794,7 @@ export type QaRunStage =
 export type QaEvaluatorId =
   | "course_setup"
   | "structural"
+  | "length"
   | "alignment"
   | "assessment"
   | "fidelity"
@@ -910,6 +936,46 @@ export type QaRun = {
   createdBy: string;
   updatedAt: string;
   completedAt: string | null;
+  // A person's go-ahead to render video; null until QA has finished.
+  renderApproval?: QaRenderApproval | null;
+  // Measured lengths per asset and per topic, from the length check.
+  lengths?: QaLengthReport | null;
+};
+
+export type QaRenderApproval = {
+  status: "pending" | "approved";
+  requestedAt: string;
+  // The snapshot QA last checked; approval is refused if Kyron changed since.
+  snapshotId: string | null;
+  decidedBy: string | null;
+  decidedAt: string | null;
+  // Renders this approval covers: the first and one re-render after a fix.
+  rendersAllowed: number;
+  // Set when approved while video rendering is turned off.
+  renderingOff?: boolean;
+};
+
+export type QaAssetLength = {
+  activityId: string;
+  title: string | null;
+  sectionId: string | null;
+  kind: AssetKind;
+  minutes: number;
+  method: "narration_estimate" | "activity_estimate" | "question_estimate";
+};
+
+// One topic's video: all of its video assets played back to back.
+export type QaTopicVideoLength = {
+  sectionId: string | null;
+  topic: string | null;
+  minutes: number;
+  category: LengthLevel;
+};
+
+export type QaLengthReport = {
+  level: LengthLevel | null;
+  assets: QaAssetLength[];
+  topicVideos: QaTopicVideoLength[];
 };
 
 export type QaRunSummary = Pick<
@@ -940,6 +1006,12 @@ export type QaRunDetailResponse = {
   snapshot: QaLessonSnapshot | null;
   contentWritable: boolean;
   pendingStepCount: number;
+  // Milliseconds until the next step may run while the run waits on outside
+  // work, such as a video render; null when nothing waits.
+  nextStepInMs: number | null;
+  // Whether a video can be uploaded for the narration check here (not on
+  // the deployed site, which keeps no files).
+  mediaUploadAvailable: boolean;
   criteria: QaRubricCriterion[];
   // Newest first: the version history of this run's lesson and target.
   versions: QaContentVersion[];
@@ -958,6 +1030,11 @@ export type QaContentChange = {
   findingIds: string[];
   criterionIds: string[];
 };
+
+// Authors of the versions holding the QA agent's own changes: its fixes
+// (also "…, approved by a person") and the verifier undoing one.
+export const QA_REVISION_AUTHOR = "QA revision agent";
+export const QA_VERIFIER_AUTHOR = "QA verifier";
 
 export type QaContentVersion = {
   id: string;
@@ -1021,7 +1098,8 @@ export type QaRubricCriterion = {
     | "pedagogy"
     | "consistency"
     | "media"
-    | "tutor";
+    | "tutor"
+    | "length";
   evaluator: QaEvaluatorId;
   requirement: string;
   releaseBlocker: string;
@@ -1082,6 +1160,7 @@ export type ProductionStage =
   | "setup"
   | "generating"
   | "lesson_qa"
+  | "approval"
   | "video"
   | "review"
   | "ready"

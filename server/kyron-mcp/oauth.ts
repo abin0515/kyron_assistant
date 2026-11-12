@@ -137,13 +137,16 @@ export async function revokeToken(
   }
 }
 
+// The public client file Kyron reads (OAuth Client ID Metadata Document).
+// `selfHosted`: served by the deployed app itself at /oauth/kyron-client.json.
 export function buildClientMetadataDocument(
   clientId: string,
   redirectUri: string,
+  { selfHosted = false }: { selfHosted?: boolean } = {},
 ) {
   return {
     client_id: clientId,
-    client_name: "CPE Course Studio (local development)",
+    client_name: selfHosted ? "CPE Course Studio" : "CPE Course Studio (local development)",
     redirect_uris: [redirectUri],
     grant_types: ["authorization_code", "refresh_token"],
     response_types: ["code"],
@@ -323,6 +326,16 @@ async function postTokenRequest(
     body = await response.json();
   } catch {
     body = undefined;
+  }
+
+  // A busy or failing sign-in service is worth another try; it does not mean
+  // the sign-in was refused.
+  if (response.status === 429 || response.status >= 500) {
+    throw new KyronMcpError(
+      "KYRON_MCP_UNAVAILABLE",
+      `Kyron's sign-in service is busy (HTTP ${response.status}).`,
+      true,
+    );
   }
 
   if (!response.ok) {

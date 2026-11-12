@@ -120,6 +120,7 @@ export async function submitCurrentUserDraftWorkspace(
   includeInCalibration = false,
   qaOverride = false,
 ): Promise<DraftWorkspace | null> {
+  const startedAt = Date.now();
   const user = await getCurrentUser();
   const workspace = await getDraftWorkspaceById(id, user.id);
 
@@ -134,7 +135,7 @@ export async function submitCurrentUserDraftWorkspace(
   assertWorkspaceCanBeSubmitted(workspace);
   // Kyron generation starts only from a course setup that passed its quality
   // check (fixes it applies are read back by startDraftWorkspaceSubmission).
-  await assertSetupReadyForSubmission({ override: qaOverride, user, workspace });
+  await assertSetupReadyForSubmission({ override: qaOverride, startedAt, user, workspace });
 
   const submittingWorkspace = await startDraftWorkspaceSubmission(
     id,
@@ -147,7 +148,7 @@ export async function submitCurrentUserDraftWorkspace(
 
   try {
     const alignmentContentSignedId =
-      await uploadWorkspaceAttachmentToKyron(id, user.id);
+      await uploadWorkspaceAttachmentToKyron(id, user.id, attachmentTimeoutMs(startedAt));
     const draftRequest = toCreateDraftRequest(
       submittingWorkspace,
       alignmentContentSignedId,
@@ -191,6 +192,20 @@ export async function submitCurrentUserDraftWorkspace(
     await recordSubmissionFailure(id, user.id, submissionError);
     throw submissionError;
   }
+}
+
+// The submit request has 300 s on Vercel. The attachment transfer gets what
+// is left of it, keeping 30 s to create the Kyron draft and record the
+// outcome, and never more than its own 270-second limit.
+const SUBMIT_REQUEST_LIMIT_MS = 300_000;
+const SUBMIT_RESERVE_MS = 30_000;
+const MAX_ATTACHMENT_TRANSFER_MS = 270_000;
+
+export function attachmentTimeoutMs(startedAt: number, now = Date.now()): number {
+  return Math.max(
+    0,
+    Math.min(MAX_ATTACHMENT_TRANSFER_MS, startedAt + SUBMIT_REQUEST_LIMIT_MS - SUBMIT_RESERVE_MS - now),
+  );
 }
 
 export class DraftWorkspaceDestinationError extends Error {

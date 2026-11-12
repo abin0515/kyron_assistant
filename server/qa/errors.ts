@@ -38,6 +38,21 @@ export function configurationProblem(error: unknown): string | null {
   return null;
 }
 
+// The step's last attempt never finished: the function was stopped (Vercel's
+// 300-second limit) or the step outlasted its 5-minute lease.
+export class StepInterruptedError extends Error {
+  constructor() {
+    super("The step did not finish within 5 minutes (it was stopped or timed out).");
+    this.name = "StepInterruptedError";
+  }
+}
+
+// A Kyron hiccup that a later attempt may not hit (a timeout, a dropped
+// connection, a busy server).
+export function isTransientKyronError(error: unknown): boolean {
+  return error instanceof KyronMcpError && error.retryable;
+}
+
 // Error text is stored in run timelines, so credentials are scrubbed first.
 export function describeError(error: unknown): string {
   const message = error instanceof Error ? error.message : "Unknown error";

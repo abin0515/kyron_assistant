@@ -21,14 +21,20 @@ import {
 } from "@/features/qa/labels";
 import type { QaRunDetailResponse } from "@/types/api";
 
-export function QaRunSummary({ detail }: { detail: QaRunDetailResponse }) {
+export function QaRunSummary({
+  detail,
+  onChanged,
+}: {
+  detail: QaRunDetailResponse;
+  onChanged: (detail: QaRunDetailResponse) => void;
+}) {
   const { lesson, run } = detail;
   const active = ACTIVE_STAGES.has(run.stage) || detail.pendingStepCount > 0;
 
   return (
     <div className="grid gap-4">
       <PageHeader
-        actions={<RunActions active={active} detail={detail} />}
+        actions={<RunActions active={active} detail={detail} onChanged={onChanged} />}
         description={
           <span>
             {TARGET_LABELS[run.target]} check · {DOMAIN_LABELS[run.domain]} · {SOURCE_LABELS[run.source]} ·
@@ -47,7 +53,7 @@ export function QaRunSummary({ detail }: { detail: QaRunDetailResponse }) {
         }
         title={lesson.title}
       />
-      <InlineNotice tone={noticeTone(run.stage)}>
+      <InlineNotice tone={noticeTone(run.stage, run.media?.status === "failed")}>
         <span className="flex flex-wrap items-center gap-2">
           {active ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : null}
           {run.stageMessage}
@@ -63,7 +69,15 @@ export function QaRunSummary({ detail }: { detail: QaRunDetailResponse }) {
   );
 }
 
-function RunActions({ active, detail }: { active: boolean; detail: QaRunDetailResponse }) {
+function RunActions({
+  active,
+  detail,
+  onChanged,
+}: {
+  active: boolean;
+  detail: QaRunDetailResponse;
+  onChanged: (detail: QaRunDetailResponse) => void;
+}) {
   const router = useRouter();
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -74,6 +88,15 @@ function RunActions({ active, detail }: { active: boolean; detail: QaRunDetailRe
 
     try {
       const next = await rerunQaRun(detail.run.id);
+
+      // This check started working again meanwhile (for example approved in
+      // another tab): show it here instead of opening a new run.
+      if (next.run.id === detail.run.id) {
+        onChanged(next);
+        setWorking(false);
+
+        return;
+      }
 
       router.push(`/qa/runs/${next.run.id}`);
     } catch (rerunError) {
@@ -110,9 +133,10 @@ const SOURCE_LABELS: Record<QaRunDetailResponse["run"]["source"], string> = {
   kyron_mcp: "Kyron MCP",
 };
 
-function noticeTone(stage: QaRunDetailResponse["run"]["stage"]) {
+// A failed video check is never shown in green, whatever the script checks say.
+function noticeTone(stage: QaRunDetailResponse["run"]["stage"], videoFailed: boolean) {
   if (stage === "passed" || stage === "verified") {
-    return "success" as const;
+    return videoFailed ? ("warning" as const) : ("success" as const);
   }
 
   if (stage === "blocked" || stage === "error") {

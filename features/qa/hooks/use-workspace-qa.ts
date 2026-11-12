@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { advanceDelayMs } from "@/features/qa/advance-delay";
 import { advanceQaRun, getWorkspaceQa } from "@/features/qa/api";
 import { messageFromError } from "@/features/qa/labels";
 import type { QaRunDetailResponse, QaWorkspaceQaResponse } from "@/types/api";
 
-const STEP_DELAY_MS = 1_500;
 const RETRY_DELAY_MS = 8_000;
 
 export type WorkspaceQaState =
@@ -48,7 +48,7 @@ export function useWorkspaceQa(
             onSetupSettledRef.current();
           }
 
-          await wait(STEP_DELAY_MS, signal);
+          await wait(advanceDelayMs(detail), signal);
         } catch (error) {
           if (signal.aborted) {
             return;

@@ -45,6 +45,7 @@ import {
   updateDraftWorkspaceKyronDestination,
 } from "@/server/drafts/workspaces/repository";
 import {
+  attachmentTimeoutMs,
   submitCurrentUserDraftWorkspace,
   updateCurrentUserWorkspaceKyronDestination,
 } from "@/server/drafts/workspaces/service";
@@ -239,5 +240,15 @@ describe("workspace submission calibration", () => {
       user.id,
       "The selected Kyron folder is no longer available. Choose another destination and try again.",
     );
+  });
+});
+
+describe("the time a submit leaves for the Kyron attachment", () => {
+  it("keeps 30 s of the 300-second request for creating the draft, and never exceeds 270 s", () => {
+    const start = 1_000_000;
+
+    expect(attachmentTimeoutMs(start, start)).toBe(270_000);
+    expect(attachmentTimeoutMs(start, start + 150_000)).toBe(120_000);
+    expect(attachmentTimeoutMs(start, start + 290_000)).toBe(0);
   });
 });

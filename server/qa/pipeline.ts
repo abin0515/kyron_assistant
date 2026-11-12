@@ -14,6 +14,7 @@ import type {
   QaRunTarget,
 } from "@/types/api";
 
+import { RenderNotSentError } from "./content-errors";
 import {
   ContentSourceUnavailableError,
   resolveContentSource,
@@ -24,7 +25,7 @@ import {
   recordReadVersion,
   recordRevisionVersion,
 } from "./content-versions";
-import { configurationProblem, describeError } from "./errors";
+import { configurationProblem, describeError, isTransientKyronError, StepInterruptedError } from "./errors";
 import {
   evaluatorOrderFor,
   evaluatorsAffectedBy,
@@ -52,6 +53,7 @@ import {
   saveRun,
   saveSnapshot,
   updateLesson,
+  updateRun,
 } from "./repository";
 import {
   fieldKey,
@@ -73,13 +75,21 @@ import {
   totalTokens,
 } from "./run-records";
 import { buildSnapshot } from "./snapshot";
-import { transcribeMedia } from "./transcription";
-import type { QaStep, ScriptEvaluatorId, StoredQaRun } from "./types";
+import { transcribeMedia, transcriptionAvailable, TRANSCRIPTION_UNAVAILABLE } from "./transcription";
+import type { QaStep, ScriptEvaluatorId, StoredQaRun, VideoPollState } from "./types";
 
 const MAX_STEP_FAILURES = 2;
 const MAX_VIDEO_POLLS = 120;
+// Status checks (about 5 minutes) before a finished result counts when the
+// render was never seen in progress.
+const MIN_POLLS_BEFORE_RESULT = 10;
+// Tries of one status check after a Kyron timeout or busy server (about 3
+// minutes at the usual interval).
+const MAX_POLL_HICCUPS = 6;
 // Rendering takes minutes, so the run sleeps between status checks.
 const DEFAULT_VIDEO_POLL_MS = 30_000;
+// The pause before a failed step is tried again (QA_STEP_RETRY_MS).
+const DEFAULT_STEP_RETRY_MS = 30_000;
 // The first render plus one re-render after fixing the narration.
 const MAX_VIDEO_RENDERS = 2;
 const DRIVER_BATCH_SIZE = 2;
@@ -157,12 +167,19 @@ export async function processNextStep(runId: string): Promise<StoredQaRun | null
       let result: StepResult;
 
       try {
-        result = await executeStep(run, step);
+        result = lastAttemptUnfinished(run, step)
+          ? stepFailure(run, step, new StepInterruptedError())
+          : await executeStep(run, step);
       } catch (error) {
         result = stepFailure(run, step, error);
       }
 
-      const released = await releaseRun(runId, leaseToken, (fresh) => applyStepResult(fresh, result), result.waitMs);
+      const released = await releaseRun(
+        runId,
+        leaseToken,
+        (fresh) => withNextStepAt({ ...applyStepResult(fresh, result), claimsWithoutRelease: 0 }, result.waitMs),
+        result.waitMs,
+      );
 
       if (released) {
         await logStep(step, released, released.events.slice(run.events.length), Date.now() - startedAt);
@@ -173,12 +190,46 @@ export async function processNextStep(runId: string): Promise<StoredQaRun | null
   );
 }
 
+// When the next step waits on outside work (a render check runs every 30 s),
+// open pages can wait until then instead of asking again and again.
+function withNextStepAt(run: StoredQaRun, waitMs: number | undefined): StoredQaRun {
+  return { ...run, nextStepAt: waitMs !== undefined && waitMs > 0 ? Date.now() + waitMs : null };
+}
+
+// This claim follows one that was never released: the step's last attempt
+// was stopped (Vercel ends a function after 300 s) or ran past its lease, so
+// it counts as a failure instead of running again without end. A render
+// request whose marker is set is the exception: running it again only picks
+// up the render it may have started, and never sends a second one.
+function lastAttemptUnfinished(run: StoredQaRun, step: QaStep): boolean {
+  return (
+    (run.claimsWithoutRelease ?? 0) >= 2 && !(step.kind === "video_request" && Boolean(run.videoRequestStartedAt))
+  );
+}
+
 // Called by the worker: advances the runs that have waited longest.
 export async function driveQaRuns(limit = DRIVER_BATCH_SIZE): Promise<number> {
   const ready = await listRunIdsWithPendingWork(limit);
   const processed = await Promise.all(ready.map((runId) => processNextStep(runId)));
 
   return processed.filter(Boolean).length;
+}
+
+// Keeps advancing runs until a round finds nothing to do or the deadline
+// passes; no new round starts after it. A step that then runs past the
+// function's time limit is caught as a stopped attempt on its next claim.
+export async function driveQaRunsUntil(deadline: number): Promise<number> {
+  let total = 0;
+
+  for (;;) {
+    const processed = await driveQaRuns();
+
+    total += processed;
+
+    if (processed === 0 || Date.now() >= deadline) {
+      return total;
+    }
+  }
 }
 
 async function executeStep(run: StoredQaRun, step: QaStep): Promise<StepResult> {
@@ -275,15 +326,15 @@ async function checkStep(
 
   return {
     next: [],
-    update: (current) =>
-      appendEvent(
-        addUsage(
-          mergeEvaluation(current, { evaluator, output, scope: activityIds, snapshotId: snapshot.id }),
-          output.usage,
-        ),
+    update: (current) => {
+      const merged = mergeEvaluation(current, { evaluator, output, scope: activityIds, snapshotId: snapshot.id });
+
+      return appendEvent(
+        addUsage(output.lengths ? { ...merged, lengths: output.lengths } : merged, output.usage),
         "info",
         describeEvaluation(evaluator, output),
-      ),
+      );
+    },
   };
 }
 
@@ -317,7 +368,7 @@ function decideStep(run: StoredQaRun, source: LessonContentSource): StepResult {
   // The video does not say what the approved script says: adjust the scene
   // narration where it helps, then render again. One re-render at most.
   if (narrationOpen.length > 0 && source.supportsVideo) {
-    if ((run.videoRequests ?? 0) < MAX_VIDEO_RENDERS) {
+    if ((run.videoRequests ?? 0) < rendersAllowed(run)) {
       return {
         next: [{ kind: "revise" }, { kind: "video_request" }],
         update: (current) =>
@@ -340,18 +391,84 @@ function decideStep(run: StoredQaRun, source: LessonContentSource): StepResult {
     };
   }
 
-  const readyForVideo =
-    run.target === "lesson" &&
-    source.supportsVideo &&
-    unresolved.length === 0 &&
-    !run.findings.some((finding) => finding.status === "escalated") &&
-    run.videoJobId === null &&
-    run.media === null;
+  // QA's own checks and fixes are done. A generated Kyron lesson now waits for
+  // a person to review the template and approve it before any video is
+  // rendered (rendering uses Kyron credits). Nothing above waits for anyone.
+  const awaitsRender =
+    run.target === "lesson" && run.source === "kyron_mcp" && run.videoJobId === null && run.media === null;
+
+  if (!awaitsRender) {
+    return { next: [{ kind: "finalize" }], update: escalateExhausted };
+  }
+
+  if (run.renderApproval?.status === "approved") {
+    // An approval recorded while rendering was off needs a fresh go-ahead.
+    if (source.supportsVideo && !run.renderApproval.renderingOff && (run.videoRequests ?? 0) < rendersAllowed(run)) {
+      return { next: [{ kind: "video_request" }], update: escalateExhausted };
+    }
+
+    return {
+      next: [{ kind: "finalize" }],
+      update: (current) => markRenderingOff(escalateExhausted(current), source.supportsVideo),
+    };
+  }
 
   return {
-    next: readyForVideo ? [{ kind: "video_request" }] : [{ kind: "finalize" }],
-    update: escalateExhausted,
+    next: [{ kind: "finalize" }],
+    update: (current) => requestRenderApproval(escalateExhausted(current)),
   };
+}
+
+// The renders an approval covers: the first, and one re-render after QA fixes
+// the narration. None without an approval.
+// Why QA could not check a render now: the run's token budget or the course's
+// model budget is spent. Null when there is room.
+export async function renderBudgetProblem(run: StoredQaRun): Promise<string | null> {
+  if (totalTokens(run.usage) >= run.tokenBudget) {
+    return `The run reached its token budget (${run.tokenBudget.toLocaleString()} tokens).`;
+  }
+
+  return run.workspaceId ? courseBudgetProblem(run.workspaceId) : null;
+}
+
+function rendersAllowed(run: StoredQaRun): number {
+  return run.renderApproval?.status === "approved"
+    ? Math.min(run.renderApproval.rendersAllowed, MAX_VIDEO_RENDERS)
+    : 0;
+}
+
+function requestRenderApproval(run: StoredQaRun): StoredQaRun {
+  if (run.renderApproval?.status === "pending" && run.renderApproval.snapshotId === run.snapshotId) {
+    return run;
+  }
+
+  return appendEvent(
+    {
+      ...run,
+      renderApproval: {
+        status: "pending",
+        requestedAt: new Date().toISOString(),
+        snapshotId: run.snapshotId,
+        decidedBy: null,
+        decidedAt: null,
+        rendersAllowed: MAX_VIDEO_RENDERS,
+      },
+    },
+    "info",
+    "QA finished its checks and fixes. The template is ready for review; video rendering waits for a person's approval.",
+  );
+}
+
+function markRenderingOff(run: StoredQaRun, supportsVideo: boolean): StoredQaRun {
+  if (supportsVideo || !run.renderApproval || run.renderApproval.renderingOff) {
+    return run;
+  }
+
+  return appendEvent(
+    { ...run, renderApproval: { ...run.renderApproval, renderingOff: true } },
+    "info",
+    "The template is approved, but video rendering is turned off (QA_KYRON_VIDEO), so no video was requested.",
+  );
 }
 
 // One revision round: the revision agent proposes changes for every open
@@ -592,19 +709,114 @@ async function videoRequestStep(
   lesson: QaLesson,
   source: LessonContentSource,
 ): Promise<StepResult> {
-  const jobId = await source.requestVideo(lesson);
+  // No path may start a paid render without an approval and allowance left.
+  if ((run.videoRequests ?? 0) >= rendersAllowed(run) || run.renderApproval?.renderingOff) {
+    return {
+      next: [{ kind: "finalize" }],
+      update: (current) =>
+        appendEvent(requestRenderApproval(current), "warn", "Video rendering waits for a person's approval; no render was requested."),
+    };
+  }
+
   const renders = (run.videoRequests ?? 0) + 1;
+
+  // A request interrupted after Kyron accepted it is not sent again, for the
+  // first render or a re-render: polling reads the lesson's render state,
+  // whatever the job id. Every finished request clears the marker. This comes
+  // before the budget check: Kyron may already be rendering, and polling
+  // makes no model calls (the narration check still stops at the budget).
+  if (run.videoRequestStartedAt) {
+    return {
+      next: [{ kind: "video_poll", attempt: 1 }],
+      waitMs: videoPollIntervalMs(),
+      update: (current) =>
+        appendEvent(
+          {
+            ...current,
+            videoJobId: `kyron-render:interrupted:${current.id}`,
+            videoRequests: renders,
+            videoRequestStartedAt: null,
+            videoRenderSeen: false,
+            // Saved with the marker, before the request was sent.
+            videoPollState: current.videoPollState ?? null,
+            media: null,
+            mediaFilePath: null,
+          },
+          "warn",
+          "A render request was interrupted earlier; checking Kyron's render status instead of requesting another.",
+        ),
+    };
+  }
+
+  // The rendered video could not be checked once the budget is spent.
+  const overBudget = await renderBudgetProblem(run);
+
+  if (overBudget) {
+    return blocked(`${overBudget} No render was requested, because the video could not be checked afterwards.`);
+  }
+
+  const baseline = await readVideoBaseline(source, lesson);
+  // The baseline is saved with the marker, so an interrupted request keeps it.
+  const marked = await updateRun(run.id, (current) => ({
+    ...current,
+    videoRequestStartedAt: new Date().toISOString(),
+    videoPollState: baseline,
+  }));
+
+  if (!marked) {
+    throw new Error("The run could not be marked before requesting the render.");
+  }
+
+  let jobId: string;
+
+  try {
+    jobId = await source.requestVideo(lesson);
+  } catch (error) {
+    // A source that knows the request was never sent says so.
+    throw error instanceof RenderNotSentError ? error : new RenderRequestError(error);
+  }
 
   return {
     next: [{ kind: "video_poll", attempt: 1 }],
     waitMs: videoPollIntervalMs(),
     update: (current) =>
       appendEvent(
-        { ...current, videoJobId: jobId, videoRequests: renders, media: null, mediaFilePath: null },
+        {
+          ...current,
+          videoJobId: jobId,
+          videoRequests: renders,
+          videoRequestStartedAt: null,
+          videoRenderSeen: false,
+          videoPollState: baseline,
+          media: null,
+          mediaFilePath: null,
+        },
         "info",
         renders > 1 ? "Requested a re-render of the lesson video in Kyron." : "Requested video generation in Kyron.",
       ),
   };
+}
+
+// The render request itself failed, so Kyron may have accepted it. Errors
+// before the request (reading the run, the budget, the marker) are not this.
+class RenderRequestError extends Error {
+  readonly original: unknown;
+
+  constructor(original: unknown) {
+    super(original instanceof Error ? original.message : "The render request failed.");
+    this.name = "RenderRequestError";
+    this.original = original;
+  }
+}
+
+// What the render's first status check starts from. Without it (the read
+// failed) a render is judged on what Kyron reports, as before.
+async function readVideoBaseline(source: LessonContentSource, lesson: QaLesson): Promise<VideoPollState | null> {
+  try {
+    return source.readVideoBaseline ? await source.readVideoBaseline(lesson) : null;
+  } catch {
+    return null;
+  }
 }
 
 async function videoPollStep(
@@ -613,20 +825,33 @@ async function videoPollStep(
   lesson: QaLesson,
   source: LessonContentSource,
 ): Promise<StepResult> {
-  const status = await source.getVideoStatus(lesson, run.videoJobId ?? "");
+  // Right after the request Kyron may still report the previous render (an
+  // old error, or every video ready), so a result counts once the render was
+  // seen in progress, or after a few checks.
+  const resultCounts = run.videoRenderSeen === true || attempt >= MIN_POLLS_BEFORE_RESULT;
+  const result = await source.getVideoStatus(lesson, run.videoJobId ?? "", run.videoPollState ?? null, { resultCounts });
+  const remember = (current: StoredQaRun): StoredQaRun =>
+    result.pollState ? { ...current, videoPollState: result.pollState } : current;
+  const pollAgain = (update: (current: StoredQaRun) => StoredQaRun): StepResult => ({
+    next: [{ kind: "video_poll", attempt: attempt + 1 }],
+    update: (current) => update(remember(current)),
+    waitMs: videoPollIntervalMs(),
+  });
 
-  if (status === "pending") {
+  if (result.status === "pending") {
     return attempt >= MAX_VIDEO_POLLS
-      ? mediaFailed("Video generation did not finish in time.")
-      : {
-          next: [{ kind: "video_poll", attempt: attempt + 1 }],
-          update: (current) => current,
-          waitMs: videoPollIntervalMs(),
-        };
+      ? mediaFailed(["Video generation did not finish in time.", result.detail].filter(Boolean).join(" "))
+      : pollAgain((current) =>
+          current.videoRenderSeen || result.inProgress === false ? current : { ...current, videoRenderSeen: true },
+        );
   }
 
-  if (status === "failed") {
-    return mediaFailed("Kyron reported that video generation failed.");
+  if (!resultCounts) {
+    return pollAgain((current) => current);
+  }
+
+  if (result.status === "failed") {
+    return mediaFailed(result.message);
   }
 
   if (source.readRenderedNarration) {
@@ -685,6 +910,13 @@ async function mediaCheckStep(run: StoredQaRun): Promise<StepResult> {
   }
 
   const snapshot = await requireSnapshot(run.snapshotId);
+
+  // Without OPENAI_API_KEY an uploaded file cannot be transcribed, so the
+  // narration check is reported as not tested rather than failed.
+  if (run.mediaFilePath && !transcriptionAvailable()) {
+    return narrationNotTested(snapshot.id);
+  }
+
   // Captions from the renderer are already text; uploaded files are transcribed.
   const transcription = run.mediaFilePath
     ? await transcribeMedia(await readMediaFile(run.mediaFilePath), path.basename(run.mediaFilePath))
@@ -747,16 +979,89 @@ async function finalizeStep(run: StoredQaRun): Promise<StepResult> {
 }
 
 function stepFailure(run: StoredQaRun, step: QaStep, error: unknown): StepResult {
-  const message = describeError(error);
-  const configuration = configurationProblem(error);
+  const original = error instanceof RenderRequestError || error instanceof RenderNotSentError ? error.original : error;
+  const message = describeError(original);
+  const configuration = configurationProblem(original);
 
   if (configuration) {
-    return blocked(configuration);
+    const stop = blocked(configuration);
+
+    // Refused before Kyron took the request (not connected, rendering off):
+    // there is no render to wait for, so the marker goes too.
+    return step.kind === "video_request"
+      ? { ...stop, update: (current) => stop.update({ ...current, videoRequestStartedAt: null }) }
+      : stop;
   }
 
+  // Kyron may have accepted a render before the request failed, so it is not
+  // retried: a retry could pay for a second render. The attempt counts. An
+  // error before the request was sent is retried like any other step.
+  if (step.kind === "video_request" && error instanceof RenderRequestError) {
+    const failed = mediaFailed(`The video request failed (${message}). It was not retried, so no second render is paid for; run QA again to try once more.`);
+
+    // The marker is cleared too, so a later request is not taken for this one.
+    return {
+      ...failed,
+      update: (current) =>
+        failed.update({ ...current, videoRequests: (current.videoRequests ?? 0) + 1, videoRequestStartedAt: null }),
+    };
+  }
+
+  // Nothing reached Kyron (the run, the budget, the sign-in or the lesson
+  // could not be read): tried again, at the usual interval for a Kyron
+  // hiccup, and the marker goes so the retry sends the request. When an
+  // earlier attempt had already saved the marker, Kyron may have that
+  // request: the marker stays, so the retry picks it up instead of paying for
+  // a second render.
+  if (step.kind === "video_request") {
+    const resuming = Boolean(run.videoRequestStartedAt);
+    const unmark = (current: StoredQaRun): StoredQaRun =>
+      resuming ? current : { ...current, videoRequestStartedAt: null };
+    const failure = resuming ? "failed while picking up the earlier render request" : "failed before anything was sent to Kyron";
+
+    if (run.stepFailures + 1 < MAX_STEP_FAILURES) {
+      return {
+        next: "retry",
+        waitMs: isTransientKyronError(original) ? videoPollIntervalMs() : stepRetryWaitMs(),
+        update: (current) =>
+          appendEvent(
+            unmark({ ...current, stepFailures: current.stepFailures + 1 }),
+            "warn",
+            `${describeStep(step)} ${failure} (${message}); retrying.`,
+          ),
+      };
+    }
+
+    const stop = blocked(`${describeStep(step)} ${failure}: ${message}`);
+
+    return { ...stop, update: (current) => stop.update(unmark(current)) };
+  }
+
+  // A paid render is not given up over a Kyron hiccup: the check is tried
+  // again at the usual interval, a few times for a timeout, a busy server or
+  // a check that was stopped before it finished, once for anything else.
+  if (step.kind === "video_poll") {
+    const tries =
+      isTransientKyronError(original) || original instanceof StepInterruptedError ? MAX_POLL_HICCUPS : MAX_STEP_FAILURES;
+
+    if (run.stepFailures + 1 < tries) {
+      return {
+        next: "retry",
+        waitMs: videoPollIntervalMs(),
+        update: (current) =>
+          appendEvent({ ...current, stepFailures: current.stepFailures + 1 }, "warn", `Checking the render failed (${message}); checking again.`),
+      };
+    }
+
+    return mediaFailed(videoCheckFailed(message));
+  }
+
+  // Tried again after a pause, so a passing problem (a busy model or Kyron)
+  // has time to clear and a fast caller cannot fail the step twice at once.
   if (run.stepFailures + 1 < MAX_STEP_FAILURES) {
     return {
       next: "retry",
+      waitMs: stepRetryWaitMs(),
       update: (current) =>
         appendEvent(
           { ...current, stepFailures: current.stepFailures + 1 },
@@ -801,9 +1106,7 @@ function stepFailure(run: StoredQaRun, step: QaStep, error: unknown): StepResult
         },
       };
     case "media_check":
-    case "video_request":
-    case "video_poll":
-      return mediaFailed(message);
+      return mediaFailed(videoCheckFailed(message));
     default:
       return blocked(`${describeStep(step)} failed: ${message}`);
   }
@@ -841,6 +1144,40 @@ function blocked(message: string): StepResult {
   };
 }
 
+function narrationNotTested(snapshotId: string): StepResult {
+  const output: EvaluationOutput = {
+    checks: [
+      {
+        criterionId: "media.narration-match",
+        evaluator: "media",
+        activityId: null,
+        status: "not_tested",
+        summary: TRANSCRIPTION_UNAVAILABLE,
+      },
+    ],
+    findings: [],
+    usage: [],
+  };
+
+  return {
+    next: [{ kind: "decide" }],
+    update: (current) =>
+      appendEvent(
+        {
+          ...mergeEvaluation(current, { evaluator: "media", output, scope: null, snapshotId }),
+          media: current.media && { ...current.media, message: TRANSCRIPTION_UNAVAILABLE },
+        },
+        "warn",
+        `Video narration not tested: ${TRANSCRIPTION_UNAVAILABLE}`,
+      ),
+  };
+}
+
+// An error's own text ("fetch failed") as a sentence that says what stopped.
+function videoCheckFailed(message: string): string {
+  return `The video check could not finish: ${message.replace(/[.\s]+$/, "")}.`;
+}
+
 function mediaFailed(message: string): StepResult {
   return {
     next: [{ kind: "finalize" }],
@@ -850,7 +1187,7 @@ function mediaFailed(message: string): StepResult {
           ...current,
           media: current.media
             ? { ...current.media, status: "failed", message }
-            : { fileName: "", byteSize: 0, source: "kyron_mcp", status: "failed", transcript: null, message },
+            : { fileName: "Kyron render", byteSize: 0, source: "kyron_mcp", status: "failed", transcript: null, message },
         },
         "error",
         `Video check failed: ${message}`,
@@ -1071,6 +1408,7 @@ function notTestedOutput(
       "setup.title-clear",
     ],
     structural: ["structure.required-fields", "structure.no-placeholders", "structure.question-integrity"],
+    length: ["length.video-fit", "length.activity-fit", "length.practice-fit"],
     alignment: ["alignment.objective-coverage", "pedagogy.audience-fit"],
     assessment: ["assessment.key-correct", "assessment.single-best-answer"],
     fidelity: ["accuracy.claims-supported"],
@@ -1147,6 +1485,12 @@ function videoPollIntervalMs(): number {
   const value = Number(process.env.QA_VIDEO_POLL_MS);
 
   return Number.isFinite(value) && value >= 0 ? value : DEFAULT_VIDEO_POLL_MS;
+}
+
+function stepRetryWaitMs(): number {
+  const value = Number(process.env.QA_STEP_RETRY_MS);
+
+  return process.env.QA_STEP_RETRY_MS?.trim() && Number.isFinite(value) && value >= 0 ? value : DEFAULT_STEP_RETRY_MS;
 }
 
 function auditRate(): number {

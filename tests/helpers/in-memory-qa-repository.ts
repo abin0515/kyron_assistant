@@ -101,6 +101,11 @@ export function createInMemoryQaRepository() {
 
       return clone(matching.at(-1) ?? null);
     },
+    async hasKyronLessonRun(workspaceId: string) {
+      return [...runs.values()].some(
+        (run) => run.workspaceId === workspaceId && run.target === "lesson" && run.source === "kyron_mcp",
+      );
+    },
     async listRunIdsWithPendingWork(limit: number) {
       return [...runs.values()]
         .filter((run) => run.pendingSteps.length > 0 && (!run.lease || run.lease.expiresAt <= Date.now()))
@@ -116,7 +121,11 @@ export function createInMemoryQaRepository() {
       }
 
       const leaseToken = randomUUID();
-      const claimed = { ...run, lease: { token: leaseToken, expiresAt: Date.now() + 300_000 } };
+      const claimed = {
+        ...run,
+        claimsWithoutRelease: (run.claimsWithoutRelease ?? 0) + 1,
+        lease: { token: leaseToken, expiresAt: Date.now() + 300_000 },
+      };
       runs.set(id, clone(claimed));
 
       return { run: clone(claimed), leaseToken };

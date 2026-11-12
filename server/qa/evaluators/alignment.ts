@@ -71,6 +71,7 @@ You review a generated lesson for objective alignment and audience fit.
 1. For each learning objective, decide whether the lesson teaches it (instruction) and then lets learners practice or demonstrate it (question, conversation or scenario). "covered" needs both; "partial" has only one; "missing" has neither. List the activity ids you relied on.
 2. Report audience problems: language, examples or difficulty that do not fit the audience guidance. Use kind "audience".
 3. Report prerequisite gaps: a concept the learner must already know that is used before (or without) being introduced. Use kind "prerequisite" and severity "major".
+4. Narration, on-screen text or a title that is not real instruction (random letters, keyboard mash, test strings, made-up words, or words unrelated to the lesson) is always kind "audience" and severity "major", because learners would hear or see it.
 
 Quote the exact words from the lesson for every issue. Report only real problems; acceptable stylistic variation is not an issue.
 `.trim();

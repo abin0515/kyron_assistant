@@ -35,6 +35,34 @@ export type StoredQaRun = QaRun & {
   unverifiedChanges?: AppliedChange[];
   // Video renders requested for this run (at most two: render and re-render).
   videoRequests?: number;
+  // Saved just before Kyron is asked to render, so an interrupted request is
+  // never sent twice.
+  videoRequestStartedAt?: string | null;
+  // Set once a status check found the requested render in progress. Until
+  // then a finished result may still be the previous render's.
+  videoRenderSeen?: boolean;
+  videoPollState?: VideoPollState | null;
+  // When the next step may run, if the last step left the run waiting (a
+  // render check); null otherwise.
+  nextStepAt?: number | null;
+  // Claims since the run was last released. Two in a row mean the earlier
+  // attempt never finished (stopped by the platform or past its lease).
+  claimsWithoutRelease?: number;
+};
+
+// What a content source keeps between the status checks of one render. For
+// Kyron: the activities whose video had already failed before the request,
+// until they are seen rendering again, so an old error is not read as this
+// render's; whether other videos were seen rendering; how many checks in a
+// row only those old errors were left; how many light checks in a row there
+// were since every activity was read in full; and the activities last seen
+// rendering on a video part.
+export type VideoPollState = {
+  staleFailures: string[];
+  sawRendering?: boolean;
+  staleWaits?: number;
+  checksSinceFull?: number;
+  renderingIds?: string[];
 };
 
 export type AppliedChange = {

@@ -1,7 +1,4 @@
-import {
-  del,
-  issueSignedToken,
-} from "@vercel/blob";
+import { issueSignedToken, type IssuedSignedToken } from "@vercel/blob";
 import {
   handleUploadPresigned,
   type HandleUploadPresignedBody,
@@ -15,14 +12,19 @@ import {
   requestErrorResponse,
 } from "@/server/http/api-response";
 import {
-  finalizeSourceFileUploadForUser,
+  BLOB_SETUP_MESSAGE,
+  blobUploadsConfigured,
+  isMissingBlobCredentials,
+} from "@/server/source-files/blob-setup";
+import {
+  cancelCurrentUserSourceFileUpload,
   prepareCurrentUserSourceFileUpload,
   SourceFileNameConflictError,
   SourceFileUploadInProgressError,
   SourceFileUploadValidationError,
 } from "@/server/source-files/service";
 import type { SourceFileContentType } from "@/server/source-files/types";
-import type { SourceFileUploadClientPayload } from "@/types/api";
+import type { ApiErrorResponse, SourceFileUploadClientPayload } from "@/types/api";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,6 +33,18 @@ export const maxDuration = 300;
 const MAX_SOURCE_FILE_SIZE_BYTES = 250 * 1024 * 1024;
 const UPLOAD_TOKEN_LIFETIME_MS = 10 * 60 * 1000;
 
+// Asked by the page before it uploads: the Blob library hides this route's
+// own answers from the browser, so a missing setup is reported here.
+export async function GET() {
+  return blobUploadsConfigured()
+    ? new NextResponse(null, { status: 204, headers: noStoreHeaders })
+    : uploadsNotSetUpResponse();
+}
+
+// Hands the browser a token to upload one file straight to Vercel Blob. The
+// upload is finished by POST /api/source-files/complete; no Blob callback is
+// registered (Vercel calls it without a session, and /complete already does
+// the work).
 export async function POST(request: NextRequest) {
   let requestBody: unknown;
 
@@ -40,12 +54,16 @@ export async function POST(request: NextRequest) {
     return requestErrorResponse("The upload request must contain JSON.");
   }
 
-  if (!isUploadRequestBody(requestBody)) {
+  if (!isTokenRequestBody(requestBody)) {
     return requestErrorResponse("The upload request is invalid.");
   }
 
-  if (isTokenRequest(requestBody) && !hasSameOrigin(request)) {
+  if (!hasSameOrigin(request)) {
     return requestErrorResponse("Request origin is not allowed.", 403);
+  }
+
+  if (!blobUploadsConfigured()) {
+    return uploadsNotSetUpResponse();
   }
 
   try {
@@ -53,13 +71,16 @@ export async function POST(request: NextRequest) {
       body: requestBody,
       request,
       getSignedToken: createUploadToken,
-      onUploadCompleted: saveCompletedUpload,
     });
 
     return NextResponse.json(response, {
       headers: noStoreHeaders,
     });
   } catch (error) {
+    if (isMissingBlobCredentials(error)) {
+      return uploadsNotSetUpResponse();
+    }
+
     if (error instanceof SourceFileNameConflictError) {
       return conflictErrorResponse(error.message, false);
     }
@@ -87,7 +108,7 @@ async function createUploadToken(
   const upload = parseClientPayload(clientPayload, pathname);
   const validUntil = Date.now() + UPLOAD_TOKEN_LIFETIME_MS;
   const contentType = contentTypeForFileName(upload.name);
-  const session = await prepareCurrentUserSourceFileUpload({
+  await prepareCurrentUserSourceFileUpload({
     id: upload.uploadId,
     originalName: upload.name,
     blobPathname: pathname,
@@ -95,17 +116,22 @@ async function createUploadToken(
     declaredByteSize: upload.size,
     expiresAt: new Date(validUntil).toISOString(),
   });
-  const tokenPayload = JSON.stringify({
-    userId: session.createdById,
-    uploadId: session.id,
-  } satisfies SourceFileUploadTokenPayload);
-  const token = await issueSignedToken({
-    pathname,
-    operations: ["put"],
-    allowedContentTypes: [contentType],
-    maximumSizeInBytes: MAX_SOURCE_FILE_SIZE_BYTES,
-    validUntil,
-  });
+
+  let token: IssuedSignedToken;
+
+  try {
+    token = await issueSignedToken({
+      pathname,
+      operations: ["put"],
+      allowedContentTypes: [contentType],
+      maximumSizeInBytes: MAX_SOURCE_FILE_SIZE_BYTES,
+      validUntil,
+    });
+  } catch (error) {
+    // Nothing will be uploaded, so the file's name is freed at once.
+    await cancelCurrentUserSourceFileUpload(upload.uploadId).catch(() => undefined);
+    throw error;
+  }
 
   return {
     token,
@@ -115,48 +141,17 @@ async function createUploadToken(
       validUntil,
       addRandomSuffix: false,
       allowOverwrite: false,
-      tokenPayload,
     },
   };
 }
 
-async function saveCompletedUpload({
-  blob,
-  tokenPayload,
-}: {
-  blob: {
-    pathname: string;
-    url: string;
-  };
-  tokenPayload?: string | null;
-}): Promise<void> {
-  try {
-    const upload = parseTokenPayload(tokenPayload);
-    await finalizeSourceFileUploadForUser(
-      upload.userId,
-      upload.uploadId,
-      blob.url,
-    );
-  } catch (error) {
-    await deleteRejectedUpload(blob.url);
-    throw error;
-  }
-}
+function uploadsNotSetUpResponse() {
+  const body = {
+    error: { code: "UPLOAD_FAILED", message: BLOB_SETUP_MESSAGE, retryable: false },
+  } satisfies ApiErrorResponse;
 
-async function deleteRejectedUpload(blobUrl: string): Promise<void> {
-  try {
-    await del(blobUrl);
-  } catch (error) {
-    console.error("Rejected source file Blob cleanup failed", {
-      errorName: error instanceof Error ? error.name : "UnknownError",
-    });
-  }
+  return NextResponse.json(body, { status: 503, headers: noStoreHeaders });
 }
-
-type SourceFileUploadTokenPayload = {
-  userId: string;
-  uploadId: string;
-};
 
 const CONTENT_TYPE_BY_EXTENSION = {
   pdf: "application/pdf",
@@ -203,31 +198,6 @@ function parseClientPayload(
   return { uploadId, name, size };
 }
 
-function parseTokenPayload(
-  tokenPayload: string | null | undefined,
-): SourceFileUploadTokenPayload {
-  const payload = parseJsonObject(
-    tokenPayload ?? null,
-    "Upload token metadata is missing.",
-  );
-
-  if (
-    typeof payload.userId !== "string" ||
-    !payload.userId ||
-    typeof payload.uploadId !== "string" ||
-    !isUuid(payload.uploadId)
-  ) {
-    throw new SourceFileUploadValidationError(
-      "Upload token metadata is invalid.",
-    );
-  }
-
-  return {
-    userId: payload.userId,
-    uploadId: payload.uploadId,
-  };
-}
-
 function contentTypeForFileName(fileName: string): SourceFileContentType {
   const extension = fileName.split(".").pop()?.toLowerCase();
   const contentType = extension
@@ -264,22 +234,15 @@ function parseJsonObject(
   throw new SourceFileUploadValidationError(missingMessage);
 }
 
-function isTokenRequest(
-  body: HandleUploadPresignedBody,
-): boolean {
-  return body.type === "blob.generate-presigned-url";
-}
-
-function isUploadRequestBody(
+// Only token requests come here: no upload-completed callback is registered.
+function isTokenRequestBody(
   value: unknown,
 ): value is HandleUploadPresignedBody {
-  if (typeof value !== "object" || value === null || !("type" in value)) {
-    return false;
-  }
-
   return (
-    value.type === "blob.generate-presigned-url" ||
-    value.type === "blob.upload-completed"
+    typeof value === "object" &&
+    value !== null &&
+    "type" in value &&
+    value.type === "blob.generate-presigned-url"
   );
 }
 

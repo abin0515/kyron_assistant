@@ -1,6 +1,7 @@
 import { SignIn } from "@clerk/nextjs";
 
 import { AccessCodeSignInForm } from "@/features/auth/components/access-code-sign-in-form";
+import { safeRedirectPath } from "@/lib/safe-redirect";
 import { getAuthMode } from "@/server/identity/auth-config";
 
 type SignInPageProps = {
@@ -31,19 +32,4 @@ export default async function SignInPage({ searchParams }: SignInPageProps) {
       </div>
     </main>
   );
-}
-
-function safeRedirectPath(value: string | string[] | undefined): string {
-  const path = Array.isArray(value) ? value[0] : value;
-
-  if (
-    !path ||
-    !path.startsWith("/") ||
-    path.startsWith("//") ||
-    path.startsWith("/\\")
-  ) {
-    return "/drafts";
-  }
-
-  return path;
 }

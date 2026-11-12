@@ -16,9 +16,10 @@ import {
   type CourseSetup,
 } from "@/types/api";
 import type { CourseSetupGenerationResult } from "@/server/drafts/course-setup-calibrations/types";
+import { LEVEL_DURATION_SECONDS } from "@/lib/length-targets";
 
 const MAX_COURSE_SETUP_INPUT_CHARACTERS = 200_000;
-export const COURSE_SETUP_PROMPT_VERSION = "course-setup-v1";
+export const COURSE_SETUP_PROMPT_VERSION = "course-setup-v2";
 
 export async function generateCourseSetup(
   {
@@ -107,7 +108,7 @@ Follow these rules:
 - Write one measurable learning objective that describes what learners will be able to do.
 - Describe the intended audience concisely. If it is not stated, infer only a general audience from the topic and do not invent an employer, institution, credential, or prerequisite.
 - Choose "lesson" for direct instruction with guided conversations, "practice" for reinforcing existing knowledge through questions and conversations, or "scenario" for applying knowledge in a realistic situation.
-- Choose one allowed duration in seconds: 480, 900, 1800, or 3600. Prefer the shortest duration that can reasonably cover the supplied material.
+- Choose the length level as the duration in seconds: 480 for Brief (about a 1-minute video per topic, 3-minute activities, 5-minute practice), 900 for Normal (5-minute videos, 8-minute activities, 10-minute practice), or 1800 for Detailed (15-minute videos, 20-minute activities, 30-minute practice). Follow a length the USER BRIEF asks for; otherwise pick the level whose depth fits the supplied material.
 `.trim();
 
 async function buildCourseSetupInput(
@@ -218,9 +219,10 @@ const COURSE_SETUP_SCHEMA = {
       type: "string",
       enum: [...ASSET_TYPES],
     },
+    // Brief, Normal or Detailed (lib/length-targets.ts).
     duration: {
       type: "integer",
-      enum: [...DURATIONS],
+      enum: Object.values(LEVEL_DURATION_SECONDS),
     },
   },
   required: [

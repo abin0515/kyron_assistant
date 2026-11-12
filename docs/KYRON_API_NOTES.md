@@ -81,6 +81,15 @@ Creation returns the full asset record immediately, including:
 Observed statuses are `started`, `done`, and `error`. The preview and editor URLs
 exist while generation is running, but the UI exposes them after completion.
 
+The status also covers Kyron's later work on the draft. After a video render
+in which one video failed (draft 14826, November 11, 2026), it turned from
+`done` to `error` with "Could not start avatar video generation for scene
+611410", while Kyron MCP's `get_lesson_collection` still reported `done`. Once
+QA has checked a draft's template from Kyron, the launcher keeps the draft as
+`done`, shows Kyron's message as "Template generated. Kyron reports: …", and
+reports renders QA requested on the QA run
+(`server/drafts/kyron-drafts/generated-status.ts`).
+
 Kyron remains the source of truth. A documented `404` can mean the asset was
 deleted or the current API key cannot access it.
 
@@ -161,7 +170,14 @@ undocumented `/api/v1` endpoints, so the launcher may use it.
 - With read permission, `get_lesson_segment` and
   `get_lesson_segment_transcript` return "Access forbidden"; scene caption
   files (`scene_captions_vtt_url`, signed links) carry the rendered narration.
-- `validate_lesson` lists missing videos until rendering finishes.
+- `validate_lesson` lists missing videos until rendering finishes ("Some
+  videos are missing", "Some invisible avatar videos are missing", each with
+  `activity_ids`). It does not list a video that failed but kept its old file.
+- Each video part (`lecture_video`, `question_video`, `wait_video`, …) has a
+  `video_status`: `null` when not rendered (every video before the first
+  render, and conversations' wait videos always), `"ok"` when rendered,
+  `"error"` when the render failed; the activity's `status` is then `"error"`
+  too, also in `list_lesson_activities`.
 - Kyron's `citations` field was empty for the generated draft.
 
 ## API gaps for future workflow

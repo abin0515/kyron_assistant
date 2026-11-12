@@ -2,7 +2,7 @@ import "server-only";
 
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 
-import { getKyronMcpEnv, getTokenEncryptionKey } from "@/server/env";
+import { getKyronMcpEnv, getTokenEncryptionKey, selfHostedKyronClientId } from "@/server/env";
 import { logEvent } from "@/server/logging/writer";
 import type { CurrentUser } from "@/server/identity/current-user";
 import type {
@@ -63,16 +63,26 @@ export function getKyronClientMetadataSetup(): KyronClientMetadataSetup {
 
   return {
     clientId,
+    selfHosted: env.KYRON_OAUTH_CLIENT_SELF_HOSTED,
     redirectUri: env.KYRON_OAUTH_REDIRECT_URI,
     documentJson: JSON.stringify(
       buildClientMetadataDocument(
         clientId ?? "https://YOUR-HOSTED-FILE-URL",
         env.KYRON_OAUTH_REDIRECT_URI,
+        { selfHosted: env.KYRON_OAUTH_CLIENT_SELF_HOSTED },
       ),
       null,
       2,
     ),
   };
+}
+
+// The client file this app serves at /oauth/kyron-client.json. Its client_id
+// is the file's own address, as Kyron requires.
+export function getSelfHostedClientDocument() {
+  return buildClientMetadataDocument(selfHostedKyronClientId(), getKyronMcpEnv().KYRON_OAUTH_REDIRECT_URI, {
+    selfHosted: true,
+  });
 }
 
 export async function getKyronMcpConnectionStatus(): Promise<KyronMcpConnectionStatus> {
@@ -398,6 +408,16 @@ function refreshConnection(
       await saveKyronConnection(refreshed);
 
       return refreshed;
+    } catch (error) {
+      // On Vercel another instance may have refreshed (and rotated) the token
+      // first; use the one it saved.
+      const stored = await readKyronConnection().catch(() => null);
+
+      if (stored && stored.accessToken !== connection.accessToken && !tokenNeedsRefresh(stored)) {
+        return stored;
+      }
+
+      throw error;
     } finally {
       refreshInFlight = null;
     }

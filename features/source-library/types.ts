@@ -37,6 +37,8 @@ export type SourceFileUploadProgress = {
 };
 
 export type SourceFileUploadOptions = {
+  // Chosen by the caller so it can cancel this attempt's upload session.
+  uploadId?: string;
   signal?: AbortSignal;
   onProgress?: (progress: SourceFileUploadProgress) => void;
 };

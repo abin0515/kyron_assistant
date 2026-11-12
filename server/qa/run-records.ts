@@ -88,6 +88,8 @@ export function createRunRecord({
     patchedFields: [],
     videoJobId: null,
     mediaFilePath: null,
+    renderApproval: null,
+    lengths: null,
   };
 }
 
@@ -210,6 +212,54 @@ export function computeOutcome(
   run: StoredQaRun,
   rubric: QaRubricPack,
 ): { stage: QaRunStage; message: string } {
+  // QA has done its own work; the template waits for a person's review.
+  if (run.target === "lesson" && run.renderApproval?.status === "pending" && run.media === null) {
+    const flagged = flaggedForReview(run).length;
+
+    return {
+      stage: "awaiting_approval",
+      message: `QA finished checking and fixing the template.${flagged > 0 ? ` ${flagged} item(s) are flagged for human review.` : ""} Review it and approve it to start video rendering.`,
+    };
+  }
+
+  const scripted = scriptOutcome(run, rubric);
+  // The stage stays as the script checks left it; the message says why the
+  // video could not be checked (a failed render, a request or a read).
+  const outcome =
+    run.media?.status === "failed" && run.media.message
+      ? { ...scripted, message: `${scripted.message} ${run.media.message}` }
+      : scripted;
+
+  return run.renderApproval?.status === "approved" && run.renderApproval.renderingOff
+    ? {
+        ...outcome,
+        message: `${outcome.message} Template approved by ${run.renderApproval.decidedBy ?? "a person"}; video rendering is turned off (QA_KYRON_VIDEO), so no video was requested.`,
+      }
+    : outcome;
+}
+
+// Items a person should look at: escalated findings, blocking findings QA
+// could not apply, length misfits, checks that need review or could not run,
+// and human checks not yet done.
+export function flaggedForReview(run: StoredQaRun): string[] {
+  return [
+    ...run.findings
+      .filter((finding) => finding.status === "escalated" || isUnresolvedBlocking(finding))
+      .map((finding) => finding.id),
+    ...run.findings
+      .filter((finding) => finding.evaluator === "length" && finding.status === "open")
+      .map((finding) => finding.id),
+    ...run.checks
+      .filter((check) => check.evaluator !== "length" && (check.status === "needs_review" || check.status === "not_tested"))
+      .map((check) => check.id),
+    ...run.humanChecks.filter((check) => check.status === "pending").map((check) => check.criterionId),
+  ];
+}
+
+function scriptOutcome(
+  run: StoredQaRun,
+  rubric: QaRubricPack,
+): { stage: QaRunStage; message: string } {
   const escalated = run.findings.filter((finding) => finding.status === "escalated");
   const unresolved = run.findings.filter(isUnresolvedBlocking);
 
@@ -240,12 +290,13 @@ export function computeOutcome(
     return { stage: "passed", message: "The course setup passed every check and is ready for Kyron." };
   }
 
+  // A narration pass counts only for the content it checked: a fix applied
+  // after the render leaves the video saying the old text.
+  const narrationChecks = run.checks.filter((check) => check.criterionId === "media.narration-match");
   const mediaPassed =
     run.media?.status === "checked" &&
-    run.checks.some((check) => check.criterionId === "media.narration-match") &&
-    run.checks
-      .filter((check) => check.criterionId === "media.narration-match")
-      .every((check) => check.status === "pass");
+    narrationChecks.length > 0 &&
+    narrationChecks.every((check) => check.status === "pass" && check.snapshotId === run.snapshotId);
   const humanPassed = run.humanChecks.every((check) => check.status === "pass");
 
   if (mediaPassed && humanPassed) {

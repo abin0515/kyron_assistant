@@ -4,9 +4,10 @@ import type { QaDomain, QaRubricCriterion, QaRubricPack, QaRunTarget } from "@/t
 
 import { getRubricApproval, saveRubricApproval } from "./repository";
 
-// Rubric v1 is a draft built from the QA proposal's seven dimensions. The
-// curriculum owner approves it in the app; known defects will refine it.
-export const RUBRIC_VERSION = "v1";
+// Rubric v1 was a draft built from the QA proposal's seven dimensions; v2
+// adds the Brief / Normal / Detailed length checks (Nov 2026). The curriculum
+// owner approves each version in the app; known defects will refine it.
+export const RUBRIC_VERSION = "v2";
 
 const CRITERIA: QaRubricCriterion[] = [
   {
@@ -49,7 +50,7 @@ const CRITERIA: QaRubricCriterion[] = [
     dimension: "setup",
     evaluator: "course_setup",
     requirement:
-      "The duration fits the amount of material needed for the objective, and the asset type (lesson, practice, scenario) fits how the material should be learned.",
+      "The asset type (lesson, practice, scenario) fits how the material should be learned, and the material can fit the chosen length level (Brief, Normal or Detailed; the user's choice, reported but never changed by QA).",
     releaseBlocker: "The lesson is far too short or too long for its objective.",
     required: true,
   },
@@ -77,11 +78,12 @@ const CRITERIA: QaRubricCriterion[] = [
   {
     target: "lesson",
     id: "structure.no-placeholders",
-    title: "No placeholder text",
+    title: "No placeholder or nonsense text",
     dimension: "structure",
     evaluator: "structural",
-    requirement: "No template or placeholder text such as TODO, lorem ipsum, [insert …] or {{…}}.",
-    releaseBlocker: "Placeholder text would reach learners.",
+    requirement:
+      'No template, placeholder, test or nonsense text such as TODO, lorem ipsum, [insert …], {{…}}, "test" or letter runs like "abcdef".',
+    releaseBlocker: "Placeholder or nonsense text would reach learners.",
     required: true,
   },
   {
@@ -94,6 +96,39 @@ const CRITERIA: QaRubricCriterion[] = [
       "Multiple-choice questions have at least two distinct, non-empty options, and every answer-key entry names an existing option.",
     releaseBlocker: "The answer key points to an option that does not exist.",
     required: true,
+  },
+  {
+    target: "lesson",
+    id: "length.video-fit",
+    title: "Topic videos fit the length",
+    dimension: "length",
+    evaluator: "length",
+    requirement:
+      "Each topic's video (its introduction, lectures and conclusion played back to back) is close to the target for the chosen length: Brief 1 min, Normal 5 min, Detailed 15 min.",
+    releaseBlocker: "A topic video is far shorter or longer than its target; flagged for a person, never blocking.",
+    required: false,
+  },
+  {
+    target: "lesson",
+    id: "length.activity-fit",
+    title: "Activities fit the length",
+    dimension: "length",
+    evaluator: "length",
+    requirement:
+      "Each activity is close to the target for the chosen length: Brief 3 min, Normal 8 min, Detailed 20 min.",
+    releaseBlocker: "An activity is far shorter or longer than its target; flagged for a person, never blocking.",
+    required: false,
+  },
+  {
+    target: "lesson",
+    id: "length.practice-fit",
+    title: "Practice fits the length",
+    dimension: "length",
+    evaluator: "length",
+    requirement:
+      "Each topic's practice or quiz is close to the target for the chosen length: Brief 5 min, Normal 10 min, Detailed 30 min.",
+    releaseBlocker: "A practice set is far shorter or longer than its target; flagged for a person, never blocking.",
+    required: false,
   },
   {
     target: "lesson",

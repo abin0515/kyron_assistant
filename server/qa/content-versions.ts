@@ -50,6 +50,11 @@ export async function recordReadVersion({
   const comparable = latest?.source === run.source ? latest : null;
   const changes = comparable ? diffContent(comparable.content, content, run.target) : [];
 
+  // Only the stored shape changed (for example new snapshot fields), not the text.
+  if (comparable && changes.length === 0) {
+    return null;
+  }
+
   return saveVersion({
     lesson,
     run,

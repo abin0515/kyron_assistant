@@ -25,7 +25,7 @@ export function KyronConnectionPage({
   return (
     <div className="grid gap-6">
       <PageHeader
-        description="Sign in to Kyron so the QA agent can read generated lessons and write its fixes through Kyron MCP. Development setup: the sign-in is stored encrypted on this computer."
+        description="Sign in to Kyron once so the QA agent can read generated lessons and write its fixes through Kyron MCP. The sign-in is stored encrypted in the database and used for everyone; staff never sign in to Kyron."
         eyebrow={<Badge variant="info">Admin</Badge>}
         title="Kyron connection"
       />

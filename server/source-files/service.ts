@@ -11,6 +11,7 @@ import {
   claimSourceFileForExtraction,
   createSourceFileUploadSession,
   deleteDeletableSourceFile,
+  expirePendingSourceFileUploadById,
   expirePendingSourceFileUploads,
   finalizeSourceFileUploadSession,
   getPendingSourceFileUploadByName,
@@ -28,6 +29,7 @@ import {
   SourceTextValidationError,
 } from "@/server/source-files/source-text";
 import { getCurrentUser } from "@/server/identity/current-user";
+import { MAX_AI_SOURCE_SIZE_BYTES } from "@/types/api";
 import type {
   CreateSourceFileUploadSessionInput,
   SourceFile,
@@ -38,7 +40,15 @@ import type {
   SourceFileUsage,
 } from "@/server/source-files/types";
 
-const MAX_SOURCE_EXTRACTION_SIZE_BYTES = 50 * 1024 * 1024;
+const MAX_SOURCE_EXTRACTION_SIZE_BYTES = MAX_AI_SOURCE_SIZE_BYTES;
+
+// Ends one of the user's own pending uploads that the page gave up on. A blob
+// finished after this is refused by finalize, which only takes pending ones.
+export async function cancelCurrentUserSourceFileUpload(uploadId: string): Promise<void> {
+  const user = await getCurrentUser();
+
+  await expirePendingSourceFileUploadById(uploadId, user.id);
+}
 
 export async function prepareCurrentUserSourceFileUpload({
   id,

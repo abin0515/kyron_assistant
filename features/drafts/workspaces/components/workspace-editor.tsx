@@ -3,7 +3,7 @@
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -14,6 +14,11 @@ import { DraftStatusBadge } from "@/features/drafts/shared/components/draft-stat
 import { getWorkspaceEditorDisplayStatus } from "@/features/drafts/shared/status";
 import { AutosaveStatus } from "@/features/drafts/workspaces/components/autosave-status";
 import { CourseSourceCard } from "@/features/drafts/workspaces/components/course-source-card";
+import { PlanDraftingNotice } from "@/features/drafts/workspaces/components/plan-drafting-notice";
+import {
+  PROMPT_EDIT_BUTTON_ID,
+  PromptSummaryCard,
+} from "@/features/drafts/workspaces/components/prompt-summary-card";
 import { WorkspaceForm } from "@/features/drafts/workspaces/components/workspace-form";
 import { WorkspaceStatusPanel } from "@/features/drafts/workspaces/components/workspace-status-panel";
 import { useCourseSetupGenerator } from "@/features/drafts/workspaces/hooks/use-course-setup-generator";
@@ -24,12 +29,35 @@ import {
   updateWorkspaceKyronDestination,
 } from "@/features/drafts/workspaces/api";
 import { WorkspaceQaPanel } from "@/features/qa/components/workspace-qa-panel";
-import { courseSetupsMatch } from "@/lib/course-setup";
+import { CourseStepBar } from "@/features/template-review/components/course-step-bar";
+import { courseSteps } from "@/features/template-review/steps";
+import {
+  sameQaSetupValues,
+  setupChanges,
+  type QaSetupValues,
+} from "@/lib/course-setup-changes";
 import type { DraftWorkspace, KyronDestination } from "@/types/api";
 
-export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
+// autoGenerate: opened from the new-draft prompt box, so the plan is drafted
+// as soon as the workspace loads (once; the URL flag is then dropped).
+export function WorkspaceEditor({
+  autoGenerate = false,
+  workspaceId,
+}: {
+  autoGenerate?: boolean;
+  workspaceId: string;
+}) {
   const router = useRouter();
   const submissionControllerRef = useRef<AbortController | null>(null);
+  const autoGenerateRef = useRef(autoGenerate);
+  // Step 1 shows the full prompt and files editor, or a summary of them.
+  const [editingPrompt, setEditingPrompt] = useState(false);
+  const focusAfterToggleRef = useRef<string | null>(null);
+  // What the QA agent last wrote to the setup, from the quality checks panel.
+  const [qaValues, setQaValues] = useState<QaSetupValues>({});
+  const handleQaSetupValues = useCallback((next: QaSetupValues) => {
+    setQaValues((current) => (sameQaSetupValues(current, next) ? current : next));
+  }, []);
   const [includeInCalibration, setIncludeInCalibration] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
   const [regenerationDialog, setRegenerationDialog] = useState(false);
@@ -39,6 +67,7 @@ export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const [qaBlocked, setQaBlocked] = useState(false);
   const [qaRefreshKey, setQaRefreshKey] = useState(0);
+  const [attachmentRefreshKey, setAttachmentRefreshKey] = useState(0);
   const [workspace, setWorkspace] = useState<DraftWorkspace | null>(null);
 
   const handleSaved = useCallback((savedWorkspace: DraftWorkspace) => {
@@ -61,6 +90,22 @@ export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
       .catch(() => undefined);
   }, [autosavePhase, workspaceId]);
 
+  // Opened from the prompt box: draft the plan right away, once.
+  const startDrafting = useEffectEvent((loadedWorkspace: DraftWorkspace) => {
+    if (!autoGenerateRef.current) {
+      return;
+    }
+
+    autoGenerateRef.current = false;
+    router.replace(`/drafts/${loadedWorkspace.id}`, { scroll: false });
+
+    // The prompt box already saved everything, so nothing is saved first; an
+    // edit made meanwhile cannot cancel the draft.
+    if (!loadedWorkspace.courseSetupCalibration && !loadedWorkspace.kyronDraftId) {
+      void generatePlan(loadedWorkspace, { save: false });
+    }
+  });
+
   useEffect(() => {
     const controller = new AbortController();
 
@@ -72,6 +117,14 @@ export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
             loadedWorkspace.courseSetupCalibration?.includeInCalibration ??
               false,
           );
+          // Nothing asked yet (a draft from before the prompt box): edit it.
+          setEditingPrompt(
+            !autoGenerateRef.current &&
+              !loadedWorkspace.sourceText.trim() &&
+              !loadedWorkspace.courseSetupCalibration &&
+              !loadedWorkspace.kyronDraftId,
+          );
+          startDrafting(loadedWorkspace);
         }
       })
       .catch((error: unknown) => {
@@ -94,6 +147,15 @@ export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
     },
     [],
   );
+
+  useEffect(() => {
+    const target = focusAfterToggleRef.current;
+
+    if (target) {
+      focusAfterToggleRef.current = null;
+      document.getElementById(target)?.focus();
+    }
+  }, [editingPrompt]);
 
   function handleWorkspaceChange(nextWorkspace: DraftWorkspace) {
     setFieldErrors({});
@@ -141,9 +203,10 @@ export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
 
     const calibration = workspace.courseSetupCalibration;
 
+    // Only a person's edits are worth a warning; QA fixes a new plan again.
     if (
       calibration &&
-      !courseSetupsMatch(workspace, calibration.generatedSetup)
+      setupChanges(workspace, calibration.generatedSetup, qaValues).edited
     ) {
       setRegenerationDialog(true);
       return;
@@ -153,22 +216,32 @@ export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
   }
 
   async function handleGenerate() {
-    if (!workspace) {
-      return;
+    if (workspace) {
+      await generatePlan(workspace);
     }
+  }
 
+  // Swaps step 1 between the summary and the editor, keeping keyboard focus
+  // on the card that appears.
+  function togglePromptEditor(open: boolean) {
+    focusAfterToggleRef.current = open ? "sourceText" : PROMPT_EDIT_BUTTON_ID;
+    setEditingPrompt(open);
+  }
+
+  async function generatePlan(target: DraftWorkspace, { save = true }: { save?: boolean } = {}) {
     setRegenerationDialog(false);
 
     try {
-      const savedWorkspace = await autosave.saveNow(workspace);
+      const workspaceIdToDraft = save ? (await autosave.saveNow(target)).id : target.id;
       const generatedWorkspace = await generator.generate({
-        workspaceId: savedWorkspace.id,
+        workspaceId: workspaceIdToDraft,
       });
 
       if (generatedWorkspace) {
         setWorkspace(generatedWorkspace);
         setIncludeInCalibration(false);
         setQaRefreshKey((key) => key + 1);
+        setEditingPrompt(false);
       }
     } catch {
       // Autosave exposes its own actionable error state.
@@ -269,26 +342,52 @@ export function WorkspaceEditor({ workspaceId }: { workspaceId: string }) {
         title={workspace.name || "Untitled draft"}
       />
 
+      <CourseStepBar
+        steps={courseSteps({ draftStatus: polling.state.draft?.status ?? null, lessonRun: undefined, workspace })}
+      />
+
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_316px]">
         <div className="grid min-w-0 gap-5">
-          <CourseSourceCard
-            disabled={locked}
-            generatorState={generator.state}
-            hasGeneratedSetup={Boolean(workspace.courseSetupCalibration)}
-            onGenerate={handleGenerateRequest}
-            onSourceChange={handleSourceChange}
-            sourceText={workspace.sourceText}
-            workspaceId={workspace.id}
-          />
+          {editingPrompt && !locked ? (
+            <CourseSourceCard
+              disabled={locked}
+              generatorState={generator.state}
+              hasGeneratedSetup={Boolean(workspace.courseSetupCalibration)}
+              onAttachmentLinked={() => setAttachmentRefreshKey((key) => key + 1)}
+              onClose={() => togglePromptEditor(false)}
+              onGenerate={handleGenerateRequest}
+              onSourceChange={handleSourceChange}
+              sourceText={workspace.sourceText}
+              workspaceId={workspace.id}
+            />
+          ) : (
+            <PromptSummaryCard
+              editable={!locked && generator.state.phase !== "generating"}
+              onEdit={() => togglePromptEditor(true)}
+              sourceText={workspace.sourceText}
+              workspaceId={workspace.id}
+            />
+          )}
+          {!editingPrompt || generator.state.phase === "generating" ? (
+            <PlanDraftingNotice
+              generatorState={generator.state}
+              needsPlan={!workspace.courseSetupCalibration && !locked}
+              onDraft={handleGenerateRequest}
+              onEditPrompt={() => togglePromptEditor(true)}
+            />
+          ) : null}
           <WorkspaceForm
+            attachmentRefreshKey={attachmentRefreshKey}
             destinationDisabled={locked}
             disabled={locked || generator.state.phase === "generating"}
             fieldErrors={fieldErrors}
             onDestinationChange={handleDestinationChange}
             onChange={handleWorkspaceChange}
+            qaValues={qaValues}
             workspace={workspace}
           />
           <WorkspaceQaPanel
+            onQaSetupValues={handleQaSetupValues}
             onSetupSettled={refreshAfterQa}
             refreshKey={qaRefreshKey}
             workspace={workspace}

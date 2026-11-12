@@ -209,6 +209,21 @@ export async function getLatestWorkspaceRun(
   return (await listRuns({ workspaceId, target, limit: 1 }))[0] ?? null;
 }
 
+// Whether QA has read this workspace's generated lesson from Kyron. Those runs
+// start only once Kyron reported the draft generated.
+export async function hasKyronLessonRun(workspaceId: string): Promise<boolean> {
+  const rows = (await getDatabase()`
+    SELECT 1
+    FROM qa_runs
+    WHERE workspace_id = ${workspaceId}
+      AND target = 'lesson'
+      AND data->>'source' = 'kyron_mcp'
+    LIMIT 1
+  `) as unknown[];
+
+  return rows.length > 0;
+}
+
 export async function listRunIdsWithPendingWork(limit: number): Promise<string[]> {
   const rows = (await getDatabase()`
     SELECT id
@@ -271,7 +286,9 @@ export async function updateRun(
 }
 
 // Takes a lease on a run with pending work so only one caller (the worker or
-// an open page) processes it at a time. Expired leases are reclaimed.
+// an open page) processes it at a time. Expired leases are reclaimed. Each
+// claim is counted until the run is released, so an attempt that never
+// finished is noticed by the next one.
 export async function claimRun(
   id: string,
 ): Promise<{ run: StoredQaRun; leaseToken: string } | null> {
@@ -281,7 +298,12 @@ export async function claimRun(
     SET
       lease_token = ${leaseToken},
       lease_expires_at = NOW() + (${LEASE_SECONDS} * INTERVAL '1 second'),
-      version = version + 1
+      version = version + 1,
+      data = JSONB_SET(
+        data,
+        '{claimsWithoutRelease}',
+        TO_JSONB(COALESCE((data->>'claimsWithoutRelease')::INT, 0) + 1)
+      )
     WHERE id = ${id}
       AND has_pending_steps
       AND (lease_expires_at IS NULL OR lease_expires_at <= NOW())

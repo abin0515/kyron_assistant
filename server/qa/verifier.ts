@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { QaFinding, QaLessonSnapshot } from "@/types/api";
+import { QA_VERIFIER_AUTHOR, type QaFinding, type QaLessonSnapshot } from "@/types/api";
 
 import { MAX_SETUP_REFERENCE_CHARACTERS, renderReferences } from "./evaluators/lesson-text";
 import { parseItems, readEnum, readString } from "./evaluators/parsing";
@@ -8,7 +8,7 @@ import type { UsageRecord } from "./evaluators/types";
 import { objectSchema, qaModel, runStructuredModel } from "./model";
 import type { AppliedChange } from "./types";
 
-export const VERIFIER_NAME = "QA verifier";
+export const VERIFIER_NAME = QA_VERIFIER_AUTHOR;
 
 const VERDICTS = ["resolves", "partial", "does_not_resolve", "introduces_error"] as const;
 

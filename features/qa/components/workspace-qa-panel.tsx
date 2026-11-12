@@ -2,7 +2,7 @@
 
 import { ArrowRight, Download, LoaderCircle, RefreshCw, ShieldCheck } from "lucide-react";
 import Link from "next/link";
-import { useState, type FormEvent } from "react";
+import { useEffect, useEffectEvent, useState, type FormEvent } from "react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,20 +17,35 @@ import {
 import { SeverityBadge, StageBadge } from "@/features/qa/components/qa-badges";
 import { useWorkspaceQa } from "@/features/qa/hooks/use-workspace-qa";
 import { ACTIVE_STAGES, messageFromError } from "@/features/qa/labels";
+import { qaSetupValues, type QaSetupValues } from "@/lib/course-setup-changes";
 import type { DraftWorkspace, QaFinding, QaRunDetailResponse, QaWorkspaceQaResponse } from "@/types/api";
 
 const MAX_LISTED_FINDINGS = 6;
 
 export function WorkspaceQaPanel({
+  onQaSetupValues,
   onSetupSettled,
   refreshKey,
   workspace,
 }: {
+  // The values the QA agent last wrote to the setup, so the plan can tell
+  // its fixes from a person's edits.
+  onQaSetupValues?: (values: QaSetupValues) => void;
   onSetupSettled: () => void;
   refreshKey: number;
   workspace: DraftWorkspace;
 }) {
   const { applyQa, state } = useWorkspaceQa(workspace.id, { onSetupSettled, refreshKey });
+  const setupVersions = state.status === "ready" ? state.qa.setup?.versions : undefined;
+  const reportQaSetupValues = useEffectEvent((versions: NonNullable<typeof setupVersions>) => {
+    onQaSetupValues?.(qaSetupValues(versions));
+  });
+
+  useEffect(() => {
+    if (setupVersions) {
+      reportQaSetupValues(setupVersions);
+    }
+  }, [setupVersions]);
 
   return (
     <Card>

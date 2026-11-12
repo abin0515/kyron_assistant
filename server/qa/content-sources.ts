@@ -4,6 +4,7 @@ import {
   getDraftWorkspaceById,
   updateDraftWorkspace,
 } from "@/server/drafts/workspaces/repository";
+import { getKyronLessonCollection } from "@/server/kyron/client";
 import { hasKyronWriteAccess } from "@/server/kyron-mcp/service";
 import type { DraftWorkspace, QaContentSourceKind, QaLesson } from "@/types/api";
 
@@ -17,15 +18,31 @@ import {
   mapKyronLesson,
   readKyronCaptions,
   readKyronField,
+  readKyronFailedVideos,
   readKyronLessonData,
   readKyronRenderStatus,
   requestKyronRender,
   writeKyronField,
+  type KyronRenderMemory,
 } from "./kyron-lesson";
-import type { LessonPacket } from "./types";
+import type { LessonPacket, VideoPollState } from "./types";
 import { loadWorkspaceReferences } from "./workspace-references";
 
-export type VideoJobStatus = "pending" | "done" | "failed";
+// A failed render says which videos failed and, when Kyron gives one, why.
+// A pending one may say what it waits on, and whether anything shows the
+// render running (inProgress: false when it only waits on old errors).
+export type VideoJobStatus = (
+  | { status: "pending"; detail?: string; inProgress?: boolean }
+  | { status: "done" }
+  | { status: "failed"; message: string }
+) & { pollState?: VideoPollState };
+
+export type { VideoPollState };
+
+// resultCounts is false while the pipeline will ignore a "done" or "failed"
+// anyway (the render was not yet seen in progress): a source may then skip
+// the extra reads that confirm one.
+export type VideoStatusOptions = { resultCounts?: boolean };
 
 // Drafts whose name starts with this may be changed while writes are limited
 // to test content.
@@ -42,7 +59,14 @@ export type LessonContentSource = {
   readField(lesson: QaLesson, activityId: string, fieldPath: string): Promise<string | null>;
   writeField(lesson: QaLesson, activityId: string, fieldPath: string, value: string): Promise<void>;
   requestVideo(lesson: QaLesson): Promise<string>;
-  getVideoStatus(lesson: QaLesson, jobId: string): Promise<VideoJobStatus>;
+  // Read just before a render is requested: the state its first check starts from.
+  readVideoBaseline?(lesson: QaLesson): Promise<VideoPollState>;
+  getVideoStatus(
+    lesson: QaLesson,
+    jobId: string,
+    pollState?: VideoPollState | null,
+    options?: VideoStatusOptions,
+  ): Promise<VideoJobStatus>;
   downloadVideo(lesson: QaLesson, jobId: string): Promise<{ fileName: string; bytes: Uint8Array }>;
   // Sources that render their own video can return its spoken text directly
   // (for Kyron, the captions) instead of a file to transcribe.
@@ -167,10 +191,76 @@ function kyronSource({ video, writable }: { video: boolean; writable: boolean })
 
       return requestKyronRender(requireDraftId(lesson));
     },
-    getVideoStatus: (lesson) => readKyronRenderStatus(requireDraftId(lesson)),
+    readVideoBaseline: async (lesson) => ({ staleFailures: (await readKyronFailedVideos(requireDraftId(lesson))).map(String) }),
+    async getVideoStatus(lesson, _jobId, pollState, options) {
+      const draftId = requireDraftId(lesson);
+      const result = await readKyronRenderStatus(draftId, toRenderMemory(pollState), options);
+      const next = { pollState: toPollState(result.memory) };
+
+      // Kyron's reason costs a REST call: only for a failure that counts.
+      return result.status.status === "failed"
+        ? {
+            status: "failed",
+            message: options?.resultCounts === false ? result.status.message : await withKyronReason(draftId, result.status.message),
+            ...next,
+          }
+        : { ...result.status, ...next };
+    },
     downloadVideo: unsupported("Kyron videos are checked through their captions."),
     readRenderedNarration: (lesson) => readKyronCaptions(requireDraftId(lesson)),
   };
+}
+
+// The run's stored poll state as Kyron render memory. It is stored JSON, so
+// every field is checked; light checks need both of their fields intact,
+// otherwise the next check reads every activity in full.
+function toRenderMemory(pollState: VideoPollState | null | undefined): KyronRenderMemory {
+  const memory: KyronRenderMemory = {
+    staleFailures: (Array.isArray(pollState?.staleFailures) ? pollState.staleFailures : []).map(Number).filter(Number.isSafeInteger),
+    sawRendering: pollState?.sawRendering === true,
+    staleWaits: typeof pollState?.staleWaits === "number" && Number.isSafeInteger(pollState.staleWaits) ? pollState.staleWaits : 0,
+  };
+  const renderingIds = parseIds(pollState?.renderingIds);
+  const since = pollState?.checksSinceFull;
+
+  return renderingIds && typeof since === "number" && Number.isSafeInteger(since) && since >= 0
+    ? { ...memory, checksSinceFull: since, renderingIds }
+    : memory;
+}
+
+function toPollState(memory: KyronRenderMemory): VideoPollState {
+  return {
+    staleFailures: memory.staleFailures.map(String),
+    sawRendering: memory.sawRendering,
+    staleWaits: memory.staleWaits,
+    ...(memory.checksSinceFull !== undefined ? { checksSinceFull: memory.checksSinceFull } : {}),
+    ...(memory.renderingIds ? { renderingIds: memory.renderingIds.map(String) } : {}),
+  };
+}
+
+// Activity ids, or null when any entry is not one.
+function parseIds(value: unknown): number[] | null {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+
+  const ids = value.map((item) => (typeof item === "string" && /^\d+$/.test(item) ? Number(item) : NaN));
+
+  return ids.every((id) => Number.isSafeInteger(id) && id > 0) ? ids : null;
+}
+
+// Kyron's draft status names the scene that failed (for example "Could not
+// start avatar video generation for scene 611410"); only its REST API reports
+// it. Left out when it cannot be read.
+async function withKyronReason(draftId: number, message: string): Promise<string> {
+  try {
+    const collection = await getKyronLessonCollection(draftId);
+    const reason = collection.status === "error" ? collection.status_message.trim() : "";
+
+    return reason ? `${message} Kyron says: "${reason}".` : message;
+  } catch {
+    return message;
+  }
 }
 
 // QA_KYRON_WRITES / QA_KYRON_VIDEO: "off", "test-only" (drafts named

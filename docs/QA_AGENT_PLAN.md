@@ -25,7 +25,8 @@ Server-side poller ──► Kyron reports "done" ──► generated-lesson che
 Lesson check ──► read through Kyron MCP (scenes, conversations, vocabulary)
              ──► checks ──► revision agent writes safe fixes scene by scene (lock version, read back)
              ──► independent verifier: a fix that adds an error is reverted and escalated
-             ──► re-check ──► render video in Kyron (QA_KYRON_VIDEO) ──► narration check from captions
+             ──► re-check ──► awaiting approval: the owner reviews the template and the module report
+             ──► approved ──► render video in Kyron (QA_KYRON_VIDEO) ──► narration check from captions
              ──► mismatch: fix narration and re-render once ──► review: escalations, human checks, publish (manual)
 ```
 
@@ -116,8 +117,44 @@ format. Log purge does not delete versions.
 
 Structural rules, source fidelity (claims vs. workspace references), assessment
 (questions solved with the key hidden), objective coverage and audience fit,
-cross-field consistency, and — once a video is available — narration vs.
-transcript. Tutor behavior and visuals are recorded as human checks.
+cross-field consistency, length against the chosen level, and — once a video
+is available — narration vs. transcript. Tutor behavior and visuals are
+recorded as human checks.
+
+The structural rule "No placeholder or nonsense text" (since Nov 11, 2026)
+treats test or nonsense text as a major finding, so QA rewrites it like any
+other fix. It catches template text (TODO, lorem ipsum, [insert …], {{…}}),
+stock test strings ("test", "asdf", "sample text"), spoken narration with no
+words, and fields where at least half the words are letter runs ("abcdef",
+"cdefgab"), keyboard runs ("asdf", "qwerty") or one letter repeated ("aaaa").
+Quoted text and capitalised labels such as ABCD are left alone. Kyron lessons
+are checked scene by scene, so the finding names the scene. The audience-fit
+review also rates nonsense the rule cannot catch (made-up words, off-topic
+filler) as major.
+
+### Length targets (since Nov 11, 2026)
+
+Planning picks one length level per module; QA checks each asset against it
+(`lib/length-targets.ts`, the length check in `server/qa/evaluators/length.ts`):
+
+| Content | Brief | Normal | Detailed |
+|---|---|---|---|
+| Video (one per topic) | 1 min | 5 min | 15 min |
+| Activity | 3 min | 8 min | 20 min |
+| Practice / quiz | 5 min | 10 min | 30 min |
+
+The level is stored as the Kyron lesson length it maps to: Brief 480 s, Normal
+900 s, Detailed 1800 s (3600 s also reads as Detailed). The mapping is
+calibrated on a generated draft: a 900-second Kyron lesson produced a
+4.9-minute topic video, which is Normal. A topic is a Kyron section; its video
+is its introduction, lectures and conclusion played back to back, and its
+practice activities form its quiz. Before rendering, lengths are estimated from
+narration at 150 words per minute, plus 2 minutes per learner turn for a
+conversation (one turn per question-bank item, 3 when Kyron gives none) and
+1 minute per multiple-choice question. A length closer to another level's
+target than to the chosen one is a minor finding with a "needs review" check,
+flagged for a person; QA never changes lengths and they never block. Setup QA
+likewise reports on the chosen level but never changes it.
 
 ## Production jobs
 
@@ -130,10 +167,17 @@ stage from the durable records and logs every change (`production.stage`):
 | Course setup | Setup generated, checked and fixed; waiting for the Kyron draft |
 | Kyron generating | The draft exists; Kyron is generating |
 | Lesson QA | Reading, checking, revising and verifying the lesson |
+| Awaiting approval | QA is done; the owner reviews the template and approves it to render video |
 | Video | Rendering in Kyron and checking the narration |
 | Needs review | What a person must do is listed (escalations, human checks, video) |
 | Ready | Script, video and human checks passed; publishing stays manual |
 | Blocked | Kyron failed, configuration missing, or the course budget is spent |
+
+Kyron's draft status also turns "error" (or "started") during later video
+renders. Once QA has checked the template from Kyron, the course counts as
+generated (Kyron's message is kept as "Template generated. Kyron reports: …"),
+and a failed render QA requested shows on the lesson run ("The render failed;
+run QA again and approve a new render"), not as a failed generation.
 
 `QA_COURSE_BUDGET_USD` (default $1) caps model spend per course: once reached,
 model steps stop and the job shows **Blocked**. The **QA agent → Production**
@@ -174,11 +218,64 @@ saved as a version by "QA verifier", and its findings are escalated.
 
 ## Video and narration loop
 
-When the script passes and video is allowed, the run asks Kyron to render the
-lesson, checks the render status every 30 s (`validate_lesson`), then compares
-Kyron's captions with the approved script. If they differ, the agent may adjust
-the scene narration and the lesson is rendered once more; a second mismatch is
-escalated.
+When QA has finished its own checks and fixes on a generated Kyron lesson, the
+run waits in **Awaiting approval** (`QaRun.renderApproval`): the workspace owner
+opens `/drafts/[id]/review`, reads the template (grouped by topic) and the
+module report, and approves it (`POST /api/qa/runs/[id]/approve-render`). Flagged
+or escalated items do not hide the approval; they are listed for the reviewer.
+The approval is refused if the lesson changed in Kyron since QA checked it (QA
+then checks it again). Only then does the run ask Kyron to render the lesson,
+check the render status every 30 s, and compare Kyron's captions with the
+approved script. The render is still running while `validate_lesson` lists a
+missing video for an activity that has not failed; it failed when a narrated
+video part (or its activity) reports `"error"`, and the failure names those
+videos plus Kyron's own reason when its draft status gives one. A finished
+result counts only once the render was seen in progress (or after 10 checks),
+because right after the request Kyron can still show the previous render. A
+video already in error before the request (read just before it, saved with
+the request marker) counts as failed again only after it was seen rendering.
+Once everything else is over, a new failure is reported at once (with that
+video); otherwise the run waits on the old error for 5 minutes after other
+videos were seen rendering, or 20 minutes if none were, then reports that
+Kyron still shows an error for it. A check that fails is tried again 30 s
+later: up to 6 times for a Kyron timeout or busy server (including its sign-in
+service), once for anything else, then the run says the video check could not
+finish. An error before the render request is sent (reading the run or the
+budget) is retried and never counted as a render; a refusal before Kyron took
+the request (not connected, rendering off) stops the run and clears the
+request marker. While `validate_lesson` is clear, a full check reads every
+activity in full on the first check and after three light checks in a row
+(about every 2 minutes). A light check reads in full only activities whose list
+status is neither "ok" nor empty, videos still showing an old error, and videos
+the last check saw rendering: on Nov 12, 2026 the re-render cost 11 Kyron calls
+per check, and a light check costs 5. Before a light check's "done" or
+"failed" counts, it reads the activities it skipped and decides again. A video
+that shows rendering or failing only on its own part, while its activity's
+list status says "ok" or has none, is found at the next full check. A render
+that brief (under 2 minutes) can go unseen, so it does not restart the
+old-error wait. While a render check waits, an open page asks for the run when
+the check is due (`nextStepInMs`) instead of every 1.5 s.
+A failed render is never retried on its own: the review page offers
+**Run QA again**, which needs a new approval. Since Nov 11, 2026 (the first
+live render missed a failed Introduction video). If they differ, the agent may adjust the
+scene narration and the lesson is rendered once more; a second mismatch is
+escalated. One approval covers at most two renders; "Run again" starts a new
+run that needs a new approval. Only the workspace owner or the admin can
+approve, only the latest check of the lesson, and only while no video is
+attached. A failed render request is never retried, and a request interrupted
+after Kyron accepted it is not sent again, so one failure cannot pay for two
+renders. Approval is refused while the run's token budget or the course budget
+is spent, because the video could not be checked afterwards. With
+`QA_KYRON_VIDEO=off` the approval is recorded and nothing is rendered; once
+rendering is on, the owner approves again to render. A fix applied after a
+render makes the narration check stale, so the run cannot reach Verified until
+the video is checked again.
+
+The module report shows, per module: the topic and learning objective of each
+asset, each topic's video length and its category, what QA found and fixed
+(before and after), items flagged for human review and why, and a preview link
+per asset (the draft's Kyron preview plus a link to the asset on the review
+page). Activity and practice lengths are checked but not shown.
 
 ## Defect library
 
@@ -208,11 +305,11 @@ automatically. CSV/JSON export feeds the testing sets.
 | 5a | One revision agent (`gpt-6-luna`) resolves all open findings per round; the server validates and applies its changes. | Related changes stay consistent, and corrections use a pinned model. |
 | 5b | Every content state is saved as a numbered version with before/after per field. | A full audit trail of what the agents changed and why. |
 | 6 | Missing evidence is NOT_TESTED, never PASS; a run with untested required checks ends **Incomplete**. | A green summary must not hide gaps. |
-| 7 | Video generation starts only after the lesson check passes; at most one re-render; publishing is not built. | Cost control; `AGENTS.md`. |
+| 7 | Video generation starts only after QA finishes and the owner approves the template; at most one re-render per approval; a failed render request is not retried; publishing is not built. | Cost control; the user reviews the template before credits are spent (Nov 11, 2026); `AGENTS.md`. |
 | 7a | One durable production job per course, advanced by one scheduler; a server-side poller replaces the open-page dependency. | Courses move without anyone watching a page. |
 | 7b | An independent verifier reviews every applied fix and can undo it. | The agent that wrote a fix does not grade it. |
-| 7c | Kyron writes are limited to "[QA Test]" drafts until the harness is validated (`QA_KYRON_WRITES`). | Safe testing on the shared Kyron account. |
-| 8 | OpenAI `gpt-6-luna`, medium effort, strict JSON, `store: false`, token budget per run. | Configured and tested. |
+| 7c | Kyron writes are controlled by `QA_KYRON_WRITES`: "[QA Test]" drafts only while the harness was validated; `all` since Nov 9, 2026. | Safe testing first, then QA fixes every draft. |
+| 8 | OpenAI `gpt-6-luna`, medium effort (high for the verifier), strict JSON, `store: false`, token budget per run. With `AI_GATEWAY_API_KEY` the same calls go through Vercel AI Gateway as `openai/gpt-6-luna`, pinned to OpenAI; transcription stays on `OPENAI_API_KEY`. | Configured and tested; one key for deployment on Vercel. |
 | 9 | Admins and developers see QA across the team; other users see their own. | Review needs one shared queue. |
 
 ## Storage (Neon)
@@ -316,6 +413,7 @@ as NOT_TESTED.
 
 | Stage | Meaning |
 |---|---|
+| Awaiting approval | QA finished; the template waits for the owner's review and approval before any video is rendered. |
 | Passed | Automated checks passed. For lessons, video narration and human checks are still needed. |
 | Verified | Lesson script, video narration and human checks all passed. |
 | Changes proposed | Blocking findings remain, with proposed changes to apply in Kyron Studio. |
@@ -326,7 +424,7 @@ as NOT_TESTED.
 ## Configuration
 
 `AUTH_MODE`, `ACCESS_CODE_ADMIN`, `ACCESS_CODE_DEVELOPER`, `SESSION_SECRET`,
-`DATABASE_URL`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_QA_MODEL` (optional),
+`DATABASE_URL`, `AI_GATEWAY_API_KEY` (optional), `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_QA_MODEL` (optional),
 `OPENAI_TRANSCRIPTION_MODEL`, `OPENAI_REVISION_MODEL`, `QA_AUTONOMY_POLICY`, `QA_RUN_TOKEN_BUDGET`,
 `QA_AUDIT_RATE`, `QA_KYRON_WRITES`, `QA_KYRON_VIDEO`, `QA_COURSE_BUDGET_USD`,
 `QA_VIDEO_POLL_MS` (tests), `CRON_SECRET`, `KYRON_MCP_URL`, `KYRON_OAUTH_CLIENT_ID`,

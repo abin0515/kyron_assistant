@@ -31,7 +31,7 @@ import type {
 
 import { resolveContentSource } from "./content-sources";
 import { recordDefect } from "./defects";
-import { processNextStep, startQaRun } from "./pipeline";
+import { processNextStep, renderBudgetProblem, startQaRun } from "./pipeline";
 import {
   findLessonByWorkspace,
   getContentVersion,
@@ -39,6 +39,7 @@ import {
   getLesson,
   getRun,
   getSnapshot,
+  hasKyronLessonRun,
   listContentVersions,
   listLessons,
   listRuns,
@@ -48,7 +49,8 @@ import {
   updateRun,
 } from "./repository";
 import { getRubricPack, QA_DOMAINS } from "./rubrics";
-import { appendEvent, isUnresolvedBlocking, totalTokens } from "./run-records";
+import { mediaUploadAvailable } from "./media-upload";
+import { appendEvent, computeOutcome, isUnresolvedBlocking, totalTokens } from "./run-records";
 import { buildSnapshot, hashPacket, parseLessonPacket } from "./snapshot";
 import { MAX_TRANSCRIPTION_BYTES } from "./transcription";
 import type { StoredQaRun } from "./types";
@@ -61,6 +63,9 @@ const RUN_VERSION_HISTORY = 20;
 // How long a generation or submission request keeps driving QA itself before
 // leaving the rest to the worker or an open page.
 export const INLINE_QA_BUDGET_MS = 120_000;
+// Past this, a submit request is refused before the Kyron draft is started,
+// so creating it (and recording a failure) fits in the 300-second limit.
+const SUBMIT_GATE_LIMIT_MS = 150_000;
 
 export class QaValidationError extends Error {
   readonly errors: string[];
@@ -116,12 +121,18 @@ export async function runSetupQaAfterGeneration({
 
 // Runtime step 2: Kyron creation waits for a current, passing setup check.
 // Unresolved blocking findings need an explicit, recorded override.
+// startedAt: when the submit request began. A check that used most of the
+// request leaves too little time to create the Kyron draft, so the submit is
+// refused before it starts (and before an override is logged); the next
+// submit passes the settled check at once.
 export async function assertSetupReadyForSubmission({
   override,
+  startedAt = Date.now(),
   user,
   workspace,
 }: {
   override: boolean;
+  startedAt?: number;
   user: CurrentUser;
   workspace: DraftWorkspace;
 }): Promise<void> {
@@ -150,6 +161,7 @@ export async function assertSetupReadyForSubmission({
   }
 
   if (!BLOCKING_STAGES.has(settled.stage)) {
+    assertTimeLeftToSubmit(startedAt);
     return;
   }
 
@@ -160,6 +172,7 @@ export async function assertSetupReadyForSubmission({
     );
   }
 
+  assertTimeLeftToSubmit(startedAt);
   await updateRun(settled.id, (current) =>
     appendEvent(current, "warn", `${user.name} submitted to Kyron with unresolved quality findings.`),
   );
@@ -173,6 +186,13 @@ export async function assertSetupReadyForSubmission({
     qaRunId: settled.id,
     workspaceId: workspace.id,
   });
+}
+
+// Whether QA already checked this draft's generated template from Kyron.
+export async function draftTemplateChecked(draftId: number): Promise<boolean> {
+  const owner = await findWorkspaceOwnerByKyronDraftId(draftId);
+
+  return owner ? hasKyronLessonRun(owner.workspaceId) : false;
 }
 
 // Runtime step 3: when Kyron finishes generating, check the generated lesson.
@@ -323,6 +343,13 @@ export async function rerunRun(runId: string, user: CurrentUser): Promise<QaRunD
     throw new QaNotFoundError("The QA record for this run was not found.");
   }
 
+  // A second click, or a second tab, joins the check that is already running.
+  const latest = previous.workspaceId ? await getLatestWorkspaceRun(previous.workspaceId, previous.target) : null;
+
+  if (latest && latest.pendingSteps.length > 0) {
+    return getRunDetail(latest.id, user);
+  }
+
   const snapshot =
     previous.source === "manual" && previous.snapshotId ? await getSnapshot(previous.snapshotId) : null;
   const run = await startQaRun({
@@ -427,6 +454,116 @@ export async function recordHumanCheck(
   });
 
   return getRunDetail(runId, user);
+}
+
+// A person has reviewed the generated template and lets video rendering
+// start (it uses Kyron credits). Refused if the lesson changed in Kyron since
+// QA checked it: QA then checks it again first. Only this comparison uses
+// the content fingerprint, so QA's own later fixes never cancel an approval.
+export async function approveRender(runId: string, user: CurrentUser): Promise<QaRunDetailResponse> {
+  const run = await requireVisibleRun(runId, user);
+
+  // Rendering spends Kyron credits: only the workspace owner or the admin.
+  if (run.ownerId !== user.id && user.role !== "admin") {
+    throw new QaNotFoundError("The QA run was not found.");
+  }
+
+  if (!awaitsApproval(run)) {
+    throw new QaConflictError("This template is not waiting for approval.");
+  }
+
+  if (run.workspaceId && (await getLatestWorkspaceRun(run.workspaceId, "lesson"))?.id !== run.id) {
+    throw new QaConflictError("A newer QA check of this lesson exists. Review and approve that one instead.");
+  }
+
+  const lesson = await getLesson(run.lessonId);
+
+  if (!lesson) {
+    throw new QaNotFoundError("The QA record for this run was not found.");
+  }
+
+  const source = await resolveContentSource(run.source, lesson);
+
+  // An approval recorded while rendering was off can be given again once it is on.
+  if (run.renderApproval?.status === "approved" && !source.supportsVideo) {
+    throw new QaConflictError("Video rendering is still turned off on this site (QA_KYRON_VIDEO), so there is nothing to approve yet.");
+  }
+
+  // QA could not check the rendered video with its budget spent.
+  const overBudget = source.supportsVideo ? await renderBudgetProblem(run) : null;
+
+  if (overBudget) {
+    throw new QaConflictError(`${overBudget} No render was started, because QA could not check the video afterwards. Raise the budget, then approve again.`);
+  }
+
+  const checked = run.renderApproval?.snapshotId ? await getSnapshot(run.renderApproval.snapshotId) : null;
+  const current = hashPacket(await source.readLesson(lesson));
+
+  if (!checked || checked.contentHash !== current) {
+    await startQaRun({ createdBy: user.name, lesson, snapshot: null, source: run.source, target: run.target });
+
+    throw new QaConflictError(
+      "The lesson changed in Kyron since QA checked it, so QA is checking it again. Review and approve it once that check finishes.",
+    );
+  }
+
+  const rubric = await getRubricPack(run.domain);
+
+  await updateRunOrThrow(runId, (fresh) => {
+    if (!awaitsApproval(fresh) || fresh.renderApproval?.snapshotId !== run.renderApproval?.snapshotId || !fresh.renderApproval) {
+      throw new QaConflictError("This template is not waiting for approval.");
+    }
+
+    const approved: StoredQaRun = {
+      ...fresh,
+      renderApproval: {
+        ...fresh.renderApproval,
+        status: "approved",
+        decidedBy: user.name,
+        decidedAt: new Date().toISOString(),
+        renderingOff: !source.supportsVideo,
+      },
+    };
+    const outcome = computeOutcome(approved, rubric);
+    // The run shows its new state at once, before a worker picks up the step.
+    const next: StoredQaRun = source.supportsVideo
+      ? { ...queueSteps(approved, [{ kind: "video_request" }]), stage: "video", stageMessage: "Requesting video generation…" }
+      : { ...approved, stage: outcome.stage, stageMessage: outcome.message, completedAt: new Date().toISOString() };
+
+    return appendEvent(
+      next,
+      "info",
+      source.supportsVideo
+        ? `${user.name} approved the template; requested video rendering (up to ${fresh.renderApproval.rendersAllowed} renders).`
+        : `${user.name} approved the template; video rendering is turned off (QA_KYRON_VIDEO), so no video was requested.`,
+    );
+  });
+
+  await logEvent({
+    category: "qa",
+    event: "qa.render.approved",
+    message: `${user.name} approved the template for video rendering${source.supportsVideo ? "" : " (rendering is turned off)"}.`,
+    actorId: user.id,
+    actorRole: user.role,
+    qaRunId: run.id,
+    workspaceId: run.workspaceId,
+    kyronDraftId: lesson.kyronLessonId,
+  });
+
+  return getRunDetail(runId, user);
+}
+
+// Pending, or approved while rendering was off; finished QA work, no video yet.
+function awaitsApproval(run: StoredQaRun): boolean {
+  const approval = run.renderApproval;
+
+  return (
+    run.target === "lesson" &&
+    run.pendingSteps.length === 0 &&
+    run.videoJobId === null &&
+    run.media === null &&
+    (approval?.status === "pending" || (approval?.status === "approved" && approval.renderingOff === true))
+  );
 }
 
 export async function recordAudit(
@@ -600,6 +737,8 @@ export function toPublicRun(run: StoredQaRun): QaRun {
     createdBy: run.createdBy,
     updatedAt: run.updatedAt,
     completedAt: run.completedAt,
+    renderApproval: run.renderApproval ?? null,
+    lengths: run.lengths ?? null,
   };
 }
 
@@ -633,6 +772,15 @@ async function startSetupQa({
     source: "workspace_setup",
     target: "course_setup",
   });
+}
+
+function assertTimeLeftToSubmit(startedAt: number): void {
+  if (Date.now() - startedAt > SUBMIT_GATE_LIMIT_MS) {
+    throw new QaSubmissionGateError(
+      "checking",
+      "The quality check took most of this request, so the Kyron draft wasn't created yet. Submit again.",
+    );
+  }
 }
 
 async function driveUntilSettled(runId: string, budgetMs: number): Promise<StoredQaRun | null> {
@@ -698,9 +846,19 @@ async function toDetail(run: StoredQaRun): Promise<QaRunDetailResponse> {
     snapshot,
     contentWritable: (await resolveContentSource(run.source, lesson)).writable,
     pendingStepCount: run.pendingSteps.length,
+    nextStepInMs: nextStepInMs(run),
+    mediaUploadAvailable: mediaUploadAvailable(),
     criteria: rubric.criteria.filter((criterion) => criterion.target === run.target),
     versions: versions.items,
   };
+}
+
+// Time left before a waiting run's next step may run, counted here so the
+// browser's clock does not matter; null when nothing waits.
+function nextStepInMs(run: StoredQaRun): number | null {
+  const left = run.pendingSteps.length > 0 && typeof run.nextStepAt === "number" ? run.nextStepAt - Date.now() : 0;
+
+  return left > 0 ? Math.ceil(left) : null;
 }
 
 async function requireOwnedWorkspace(workspaceId: string, user: CurrentUser): Promise<DraftWorkspace> {

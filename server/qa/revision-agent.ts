@@ -1,11 +1,12 @@
 import "server-only";
 
-import type {
-  QaActivity,
-  QaFinding,
-  QaLessonSnapshot,
-  QaPatchProposal,
-  QaRunTarget,
+import {
+  QA_REVISION_AUTHOR,
+  type QaActivity,
+  type QaFinding,
+  type QaLessonSnapshot,
+  type QaPatchProposal,
+  type QaRunTarget,
 } from "@/types/api";
 
 import { isSetupFieldPath, readSetupField, setupFieldUpdate } from "./course-setup-fields";
@@ -28,7 +29,7 @@ import {
   readLessonField,
 } from "./snapshot";
 
-export const REVISION_AGENT_NAME = "QA revision agent";
+export const REVISION_AGENT_NAME = QA_REVISION_AUTHOR;
 export const REVISION_PURPOSE = "qa.revision";
 
 // One field change the agent proposes, linked to the findings it resolves.
@@ -63,6 +64,7 @@ You revise course content so that it resolves the QA findings listed. You are th
 - Resolve every finding you can with the smallest change that fixes it, keeping the author's voice, length and intent. Do not rewrite anything no finding asks about.
 - Only change fields listed under EDITABLE FIELDS. Return the complete new value of each field you change, once per field, and list every finding that change resolves in findingIds.
 - Stay faithful to the source material and never add claims it does not support.
+- When a field holds placeholder or nonsense text (such as "abcdef" or "test"), replace it with real content that fits the scene's title, its on-screen text and the scenes around it, about as long as a typical scene in that activity. Here the length of the old text does not matter.
 - Keep related fields consistent with each other, for example the objective and the description, or narration and on-screen text.
 - Course setup durations are 480, 900, 1800 or 3600 seconds; asset types are lesson, practice or scenario. For question.answerKey, return the correct option ids separated by commas.
 - Kyron lessons are edited scene by scene: change scenes.<id>.narration (what the avatar says), scenes.<id>.onScreenText or scenes.<id>.title, not the joined narration. A conversation's question also appears in its question_video scene; keep them consistent.

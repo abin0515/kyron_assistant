@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { advanceDelayMs } from "@/features/qa/advance-delay";
 import { advanceQaRun, getQaRun } from "@/features/qa/api";
 import { messageFromError } from "@/features/qa/labels";
 import type { QaRunDetailResponse } from "@/types/api";
 
-const STEP_DELAY_MS = 1_500;
 const RETRY_DELAY_MS = 8_000;
 
 export type QaRunState =
@@ -31,7 +31,7 @@ export function useQaRun(runId: string) {
         try {
           detail = await advanceQaRun(runId, signal);
           setState({ status: "ready", detail, advanceError: null });
-          await wait(STEP_DELAY_MS, signal);
+          await wait(advanceDelayMs(detail), signal);
         } catch (error) {
           if (signal.aborted) {
             return;

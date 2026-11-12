@@ -1,0 +1,1 @@
+ALTER TABLE llm_usage_events ADD COLUMN IF NOT EXISTS route TEXT;

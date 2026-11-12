@@ -82,8 +82,9 @@ metadata. Uploaded file bytes belong in private object storage, not PostgreSQL.
 - The browser then calls `POST /api/source-files/complete`; the server verifies
   Blob metadata, calculates the MD5 from a stream, finalizes Neon synchronously,
   and returns the real list item.
-- The Blob completion webhook calls the same idempotent finalizer as a fallback
-  when the browser leaves before acknowledgement.
+- No Blob completion webhook is registered: Vercel would call it without a
+  session, and the completion request already finalizes the upload. A
+  transfer the browser leaves before completing is not added to the library.
 - Neon stores owner-scoped metadata and workspace relationships.
 - `/sources` lists, searches, filters, and sorts saved files.
 - Workspace pages can select, upload, and unlink multiple AI source files.

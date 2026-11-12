@@ -11,30 +11,44 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { WorkspaceDraftAttachment } from "@/features/drafts/workspaces/components/workspace-draft-attachment";
 import { KyronDestinationField } from "@/features/drafts/workspaces/components/kyron-destination-field";
-import { courseSetupsMatch } from "@/lib/course-setup";
+import { setupChanges, type QaSetupValues } from "@/lib/course-setup-changes";
+import {
+  durationForLevel,
+  LENGTH_LEVEL_LABELS,
+  levelForDuration,
+  levelTargetsSummary,
+} from "@/lib/length-targets";
 import {
   COURSE_FIELD_LIMITS,
   type AssetType,
   type DraftWorkspace,
   type Duration,
   type KyronDestination,
+  LENGTH_LEVELS,
+  type LengthLevel,
 } from "@/types/api";
 
 type WorkspaceFormProps = {
+  // Changes when step 1 linked an attachment, so the field reloads.
+  attachmentRefreshKey: number;
   destinationDisabled: boolean;
   disabled: boolean;
   fieldErrors: Record<string, string[]>;
   onDestinationChange: (destination: KyronDestination) => Promise<void>;
   onChange: (workspace: DraftWorkspace) => void;
+  // What the QA agent last wrote to the setup, to tell its fixes from edits.
+  qaValues: QaSetupValues;
   workspace: DraftWorkspace;
 };
 
 export function WorkspaceForm({
+  attachmentRefreshKey,
   destinationDisabled,
   disabled,
   fieldErrors,
   onDestinationChange,
   onChange,
+  qaValues,
   workspace,
 }: WorkspaceFormProps) {
   return (
@@ -46,17 +60,79 @@ export function WorkspaceForm({
           </span>
           <div className="grid gap-1">
             <CardTitle className="text-base font-medium">
-              Review course setup
+              Plan the course
             </CardTitle>
             <p className="text-xs leading-relaxed text-muted-foreground">
-              Review and edit every field before creating the course draft.
+              The outcome, audience and length Kyron generates the template from. Review and edit every field.
             </p>
           </div>
         </div>
-        <GenerationState workspace={workspace} />
+        <GenerationState qaValues={qaValues} workspace={workspace} />
       </CardHeader>
       <CardContent className="min-w-0 grid gap-5 px-5 py-5 sm:grid-cols-2 sm:px-6 sm:py-6">
-        <FormGroupLabel>Content</FormGroupLabel>
+        <FormGroupLabel>Outcome and audience</FormGroupLabel>
+        <TextField
+          className="sm:col-span-2"
+          error={fieldErrors.learningObjective?.[0]}
+          label="Outcome (learning objective)"
+        >
+          <Textarea
+            className="min-h-28"
+            disabled={disabled}
+            id="learningObjective"
+            maxLength={COURSE_FIELD_LIMITS.learningObjective}
+            onChange={(event) =>
+              onChange({
+                ...workspace,
+                learningObjective: event.currentTarget.value,
+              })
+            }
+            value={workspace.learningObjective}
+          />
+        </TextField>
+        <TextField
+          className="sm:col-span-2"
+          error={fieldErrors.audience?.[0]}
+          label="Audience"
+        >
+          <Input
+            disabled={disabled}
+            id="audience"
+            maxLength={COURSE_FIELD_LIMITS.audience}
+            onChange={(event) =>
+              onChange({ ...workspace, audience: event.currentTarget.value })
+            }
+            value={workspace.audience}
+          />
+        </TextField>
+
+        <FormGroupLabel>Length and format</FormGroupLabel>
+        <LengthField
+          disabled={disabled}
+          onChange={(duration) => onChange({ ...workspace, duration })}
+          value={workspace.duration}
+        />
+
+        <TextField label="Asset type">
+          <select
+            className="h-10 w-full rounded-lg border border-input bg-card px-3.5 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/20 disabled:bg-muted/50 disabled:opacity-60"
+            disabled={disabled}
+            id="assetType"
+            onChange={(event) =>
+              onChange({
+                ...workspace,
+                assetType: event.currentTarget.value as AssetType,
+              })
+            }
+            value={workspace.assetType}
+          >
+            <option value="lesson">Lesson</option>
+            <option value="practice">Practice</option>
+            <option value="scenario">Scenario</option>
+          </select>
+        </TextField>
+
+        <FormGroupLabel>Course</FormGroupLabel>
         <TextField
           className="sm:col-span-2"
           error={fieldErrors.name?.[0]}
@@ -93,85 +169,16 @@ export function WorkspaceForm({
           />
         </TextField>
 
-        <TextField
-          className="sm:col-span-2"
-          error={fieldErrors.learningObjective?.[0]}
-          label="Learning objective"
-        >
-          <Textarea
-            className="min-h-28"
-            disabled={disabled}
-            id="learningObjective"
-            maxLength={COURSE_FIELD_LIMITS.learningObjective}
-            onChange={(event) =>
-              onChange({
-                ...workspace,
-                learningObjective: event.currentTarget.value,
-              })
-            }
-            value={workspace.learningObjective}
-          />
-        </TextField>
 
-        <TextField
-          className="sm:col-span-2"
-          error={fieldErrors.audience?.[0]}
-          label="Audience"
-        >
-          <Input
-            disabled={disabled}
-            id="audience"
-            maxLength={COURSE_FIELD_LIMITS.audience}
-            onChange={(event) =>
-              onChange({ ...workspace, audience: event.currentTarget.value })
-            }
-            value={workspace.audience}
-          />
-        </TextField>
 
-        <FormGroupLabel>Format</FormGroupLabel>
-        <TextField label="Asset type">
-          <select
-            className="h-10 w-full rounded-lg border border-input bg-card px-3.5 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/20 disabled:bg-muted/50 disabled:opacity-60"
-            disabled={disabled}
-            id="assetType"
-            onChange={(event) =>
-              onChange({
-                ...workspace,
-                assetType: event.currentTarget.value as AssetType,
-              })
-            }
-            value={workspace.assetType}
-          >
-            <option value="lesson">Lesson</option>
-            <option value="practice">Practice</option>
-            <option value="scenario">Scenario</option>
-          </select>
-        </TextField>
 
-        <TextField label="Duration">
-          <select
-            className="h-10 w-full rounded-lg border border-input bg-card px-3.5 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/20 disabled:bg-muted/50 disabled:opacity-60"
-            disabled={disabled}
-            id="duration"
-            onChange={(event) =>
-              onChange({
-                ...workspace,
-                duration: Number(event.currentTarget.value) as Duration,
-              })
-            }
-            value={workspace.duration}
-          >
-            <option value="480">8 minutes</option>
-            <option value="900">15 minutes</option>
-            <option value="1800">30 minutes</option>
-            <option value="3600">60 minutes</option>
-          </select>
-        </TextField>
+
+
 
         <FormGroupLabel>Delivery</FormGroupLabel>
         <WorkspaceDraftAttachment
           disabled={disabled}
+          key={attachmentRefreshKey}
           workspaceId={workspace.id}
         />
 
@@ -187,6 +194,40 @@ export function WorkspaceForm({
   );
 }
 
+// Brief / Normal / Detailed, stored as the Kyron lesson length it maps to.
+function LengthField({
+  disabled,
+  onChange,
+  value,
+}: {
+  disabled: boolean;
+  onChange: (duration: Duration) => void;
+  value: Duration;
+}) {
+  const level = levelForDuration(value) ?? "brief";
+
+  return (
+    <TextField label="Length">
+      <select
+        className="h-10 w-full rounded-lg border border-input bg-card px-3.5 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/20 disabled:bg-muted/50 disabled:opacity-60"
+        disabled={disabled}
+        id="lengthLevel"
+        onChange={(event) => onChange(durationForLevel(event.currentTarget.value as LengthLevel))}
+        value={level}
+      >
+        {LENGTH_LEVELS.map((option) => (
+          <option key={option} value={option}>
+            {LENGTH_LEVEL_LABELS[option]} ({durationForLevel(option) / 60} min lesson)
+          </option>
+        ))}
+      </select>
+      <span className="text-xs leading-relaxed text-muted-foreground">
+        {levelTargetsSummary(level)}. QA checks each asset against these.
+      </span>
+    </TextField>
+  );
+}
+
 function FormGroupLabel({ children }: { children: React.ReactNode }) {
   return (
     <p className="border-b border-border/70 pb-2 text-xs font-semibold tracking-[0.08em] text-muted-foreground uppercase sm:col-span-2">
@@ -195,19 +236,22 @@ function FormGroupLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-function GenerationState({ workspace }: { workspace: DraftWorkspace }) {
+// "AI generated", plus "QA fixed" while a field holds the QA agent's fix and
+// "Edited" when a person changed something.
+function GenerationState({ qaValues, workspace }: { qaValues: QaSetupValues; workspace: DraftWorkspace }) {
   const calibration = workspace.courseSetupCalibration;
 
   if (!calibration) {
     return null;
   }
 
-  const edited = !courseSetupsMatch(workspace, calibration.generatedSetup);
+  const { edited, qaFixed } = setupChanges(workspace, calibration.generatedSetup, qaValues);
+  const label = ["AI generated", qaFixed ? "QA fixed" : null, edited ? "Edited" : null].filter(Boolean).join(" · ");
 
   return (
     <Badge className="border-border bg-card text-foreground" variant="outline">
       <Sparkles aria-hidden="true" />
-      {edited ? "AI generated · Edited" : "AI generated"}
+      {label}
     </Badge>
   );
 }

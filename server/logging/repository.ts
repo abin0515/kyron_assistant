@@ -19,6 +19,8 @@ export type NewLogEvent = Omit<LogEventItem, "id" | "occurredAt"> & { requestId:
 export type NewLlmUsage = Omit<LlmUsageItem, "id" | "occurredAt"> & {
   pricingId: string | null;
   providerRequestId: string | null;
+  // "gateway" (Vercel AI Gateway) or "openai" (direct); null for older rows.
+  route: string | null;
 };
 
 export type LogEventFilter = {
@@ -106,14 +108,14 @@ export async function insertLlmUsage(usage: NewLlmUsage): Promise<void> {
     INSERT INTO llm_usage_events (
       id, purpose, provider, model, status, input_tokens, cached_input_tokens,
       output_tokens, reasoning_tokens, estimated_cost_usd, pricing_id, latency_ms,
-      error_code, actor_id, qa_run_id, workspace_id, provider_request_id
+      error_code, actor_id, qa_run_id, workspace_id, provider_request_id, route
     )
     VALUES (
       ${randomUUID()}, ${usage.purpose}, ${usage.provider}, ${usage.model}, ${usage.status},
       ${usage.inputTokens}, ${usage.cachedInputTokens}, ${usage.outputTokens},
       ${usage.reasoningTokens}, ${usage.estimatedCostUsd}, ${usage.pricingId},
       ${usage.latencyMs}, ${usage.errorCode}, ${usage.actorId}, ${usage.qaRunId},
-      ${usage.workspaceId}, ${usage.providerRequestId}
+      ${usage.workspaceId}, ${usage.providerRequestId}, ${usage.route}
     )
   `;
 }

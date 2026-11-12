@@ -171,11 +171,15 @@ export function productionStateFor({
     return setupState(setupRun);
   }
 
-  if (draftStatus === "error") {
+  // Once QA read the generated template from Kyron, Kyron's later "error" or
+  // "started" is about video rendering, which the lesson run reports.
+  const templateChecked = lessonRun?.source === "kyron_mcp";
+
+  if (draftStatus === "error" && !templateChecked) {
     return state("blocked", "Kyron reported that generation failed.", ["Check the draft in Kyron Studio"]);
   }
 
-  if (draftStatus === "started") {
+  if (draftStatus === "started" && !templateChecked) {
     return state("generating", "Kyron is generating the lesson.");
   }
 
@@ -219,11 +223,21 @@ function lessonState(run: StoredQaRun | null): ProductionState {
   const humanPending = run.humanChecks.filter((check) => check.status === "pending").length;
 
   switch (run.stage) {
+    case "awaiting_approval":
+      return state("approval", run.stageMessage, ["Review and approve the template to render video"]);
     case "verified":
       return state("ready", "Script, video and human checks passed.", ["Publish in Kyron when approved (never automatic)"]);
     case "passed":
       return state("review", run.stageMessage, [
-        ...(run.media?.status === "checked" ? [] : ["Render and check the video"]),
+        ...(run.media?.status === "checked"
+          ? []
+          : [
+              run.media?.status === "failed"
+                ? "The render failed; run QA again and approve a new render"
+                : run.renderApproval?.renderingOff
+                  ? "Turn on video rendering (QA_KYRON_VIDEO), then approve the template again to render it"
+                  : "Render and check the video",
+            ]),
         ...(humanPending > 0 ? [`Complete ${humanPending} human check(s)`] : []),
       ]);
     case "escalated":

@@ -48,7 +48,7 @@ export function AccessCodeSignInForm({ redirectTo }: { redirectTo: string }) {
           value={code}
         />
         <p className="text-xs text-muted-foreground" id="access-code-help">
-          Local development sign-in. Ask the project admin for a code.
+          Ask the project admin for your access code.
         </p>
       </div>
 

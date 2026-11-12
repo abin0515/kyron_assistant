@@ -38,6 +38,8 @@ export type LlmUsageInput = Pick<
 > & {
   provider?: string;
   providerRequestId?: string | null;
+  // How the call was made: "gateway" (Vercel AI Gateway) or "openai" (direct).
+  route?: "gateway" | "openai";
 };
 
 // Logging is best effort: a failed write is reported on the console and never
@@ -85,6 +87,7 @@ export async function recordLlmUsage(input: LlmUsageInput): Promise<void> {
       estimatedCostUsd: input.status === "error" ? null : estimateCostUsd(input, price),
       pricingId: price?.id ?? null,
       providerRequestId: input.providerRequestId ?? null,
+      route: input.route ?? null,
       actorId: context.actorId ?? null,
       qaRunId: context.qaRunId ?? null,
       workspaceId: context.workspaceId ?? null,

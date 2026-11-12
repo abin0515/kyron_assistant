@@ -16,6 +16,8 @@ import {
 import type { DraftPollingState } from "@/features/drafts/kyron-drafts/types";
 import { DraftStatusBadge } from "@/features/drafts/shared/components/draft-status-badge";
 import { getPollingDraftDisplayStatus } from "@/features/drafts/shared/status";
+import Link from "next/link";
+
 import { DeleteWorkspaceButton } from "@/features/drafts/workspaces/components/delete-workspace-button";
 import type { WorkspaceAutosaveState } from "@/features/drafts/workspaces/hooks/use-workspace-autosave";
 import type { DraftWorkspace } from "@/types/api";
@@ -201,6 +203,14 @@ function SubmittedDraftStatus({
           pollingState.phase === "generation_error") ? (
           <div className="grid gap-3">
             <div className="grid gap-2">
+              {pollingState.phase === "complete" ? (
+                <Link
+                  className={buttonVariants({ className: "min-h-10" })}
+                  href={`/drafts/${workspace.id}/review`}
+                >
+                  Review template and approve
+                </Link>
+              ) : null}
               <a
                 className={buttonVariants({
                   className: "min-h-10",
@@ -214,7 +224,7 @@ function SubmittedDraftStatus({
                 <ExternalLink aria-hidden="true" />
               </a>
               <a
-                className={buttonVariants({ className: "min-h-10" })}
+                className={buttonVariants({ className: "min-h-10", variant: "outline" })}
                 href={draft.editorUrl}
                 rel="noreferrer"
                 target="_blank"

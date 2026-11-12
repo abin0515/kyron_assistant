@@ -178,5 +178,29 @@ describe("run outcome", () => {
         rubric,
       ).stage,
     ).toBe("verified");
+
+    // A fix applied after the render leaves the video saying the old text.
+    expect(
+      computeOutcome(
+        {
+          ...withMedia,
+          snapshotId: "s2",
+          humanChecks: withMedia.humanChecks.map((check) => ({ ...check, status: "pass" as const })),
+        },
+        rubric,
+      ).stage,
+    ).toBe("passed");
+  });
+
+  it("says why the video could not be checked when the render failed", () => {
+    const failure = 'Kyron could not render the video for "Introduction".';
+    const run = {
+      ...baseRun(),
+      media: { fileName: "Kyron render", byteSize: 0, source: "kyron_mcp" as const, status: "failed" as const, transcript: null, message: failure },
+    };
+    const outcome = computeOutcome(run, rubric);
+
+    expect(outcome.stage).toBe(computeOutcome(baseRun(), rubric).stage);
+    expect(outcome.message).toBe(`${computeOutcome(baseRun(), rubric).message} ${failure}`);
   });
 });

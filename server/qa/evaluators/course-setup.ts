@@ -47,7 +47,7 @@ type SetupIssue = {
 const INSTRUCTIONS = `
 You check a course setup before an AI lesson generator builds a lesson from it. The setup must describe what the source material actually teaches, for the stated audience.
 
-Give a verdict for every listed criterion. For each problem, name the setup field to change, quote the source material exactly as evidence when the problem concerns its content (otherwise null), and propose the complete new value for that field. Durations are 480, 900, 1800 or 3600 seconds; asset types are lesson, practice or scenario.
+Give a verdict for every listed criterion. For each problem, name the setup field to change, quote the source material exactly as evidence when the problem concerns its content (otherwise null), and propose the complete new value for that field. The duration is the user's chosen length level (480 Brief, 900 Normal, 1800 or 3600 Detailed): treat it as fixed, judge the other fields against it, and report a duration problem only if the material clearly cannot fit that level at all. Asset types are lesson, practice or scenario.
 
 Use "critical" only when the setup would make the generator teach something false or off-topic, "major" for problems that would noticeably mislead or mis-scope the lesson, and "minor" for polish. Do not report acceptable stylistic choices.
 `.trim();
@@ -106,8 +106,10 @@ function issueFinding(issue: SetupIssue, snapshot: QaLessonSnapshot): FindingDra
   const evidenceVerified =
     issue.evidenceQuote === null ||
     snapshot.references.some((reference) => containsQuote(reference.text, issue.evidenceQuote ?? ""));
+  // The length level is the user's choice: QA reports on it, never changes it.
+  const userChoice = issue.fieldPath === "setup.duration";
   const proposedValue =
-    issue.proposedValue && setupFieldUpdate(issue.fieldPath, issue.proposedValue)
+    !userChoice && issue.proposedValue && setupFieldUpdate(issue.fieldPath, issue.proposedValue)
       ? issue.proposedValue.trim()
       : null;
 
@@ -117,12 +119,14 @@ function issueFinding(issue: SetupIssue, snapshot: QaLessonSnapshot): FindingDra
       evaluator: "course_setup",
       activityId: null,
       fieldPath: issue.fieldPath,
-      severity: evidenceVerified ? issue.severity : "minor",
+      severity: evidenceVerified && !userChoice ? issue.severity : "minor",
       observedText: currentValue,
       expectedBehavior: issue.problem,
-      rationale: evidenceVerified
-        ? issue.rationale
-        : `${issue.rationale} (The cited source passage could not be found, so this is lowered to minor.)`,
+      rationale: userChoice
+        ? `${issue.rationale} (The length is the user's choice, so QA reports this and does not change it.)`
+        : evidenceVerified
+          ? issue.rationale
+          : `${issue.rationale} (The cited source passage could not be found, so this is lowered to minor.)`,
       evidence: [
         ...(issue.evidenceQuote && evidenceVerified
           ? [{ kind: "reference" as const, label: "Source material", quote: issue.evidenceQuote }]

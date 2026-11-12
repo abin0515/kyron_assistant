@@ -21,6 +21,10 @@ export function KyronClientSetupCard({
   configured: boolean;
   setup: KyronClientMetadataSetup;
 }) {
+  if (setup.selfHosted) {
+    return <SelfHostedClientCard setup={setup} />;
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -50,6 +54,31 @@ export function KyronClientSetupCard({
         <p className="text-muted-foreground">
           Sign-in returns to <code className="break-all">{setup.redirectUri}</code>.
           Open the app at that same address so the browser keeps its session.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+// The deployed app serves its own client file, so the admin only signs in.
+function SelfHostedClientCard({ setup }: { setup: KyronClientMetadataSetup }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Ready to connect</CardTitle>
+        <CardDescription>
+          This site serves its own Kyron client file, so there is nothing to host or copy.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-2 text-sm">
+        <p>
+          Choose <strong>Connect Kyron</strong> above and approve in Kyron. You sign in once as the
+          admin; staff never sign in to Kyron, and every QA run uses this one connection.
+        </p>
+        <p className="text-muted-foreground">
+          Client file: <code className="break-all">{setup.clientId}</code>
+          <br />
+          Sign-in returns to <code className="break-all">{setup.redirectUri}</code>
         </p>
       </CardContent>
     </Card>

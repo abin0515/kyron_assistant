@@ -9,18 +9,25 @@ type ServerEnv = {
   KYRON_API_BASE_URL: string;
 };
 
+// Model calls go through Vercel AI Gateway when AI_GATEWAY_API_KEY is set,
+// otherwise straight to OpenAI. Model names stay the same either way.
 type OpenAIEnv = {
-  OPENAI_API_KEY: string;
+  AI_GATEWAY_API_KEY: string | null;
+  OPENAI_API_KEY: string | null;
   OPENAI_MODEL: string;
 };
 
 type KyronMcpEnv = {
   KYRON_MCP_URL: string;
   KYRON_OAUTH_CLIENT_ID: string | null;
+  // True when the client ID is this app's own /oauth/kyron-client.json.
+  KYRON_OAUTH_CLIENT_SELF_HOSTED: boolean;
   KYRON_OAUTH_REDIRECT_URI: string;
   KYRON_TOKEN_FILE: string;
   KYRON_MCP_READ_TOOLS: string[];
 };
+
+export const KYRON_CLIENT_FILE_PATH = "/oauth/kyron-client.json";
 
 let cachedServerEnv: ServerEnv | undefined;
 let cachedOpenAIEnv: OpenAIEnv | undefined;
@@ -65,14 +72,16 @@ export function getOpenAIEnv(): OpenAIEnv {
     return cachedOpenAIEnv;
   }
 
-  const apiKey = process.env.OPENAI_API_KEY?.trim();
+  const gatewayKey = readOptionalSecret("AI_GATEWAY_API_KEY");
+  const openaiKey = readOptionalSecret("OPENAI_API_KEY");
 
-  if (!apiKey || apiKey === "replace_with_your_openai_api_key") {
-    throw new Error("OPENAI_API_KEY is not configured.");
+  if (!gatewayKey && !openaiKey) {
+    throw new Error("Set AI_GATEWAY_API_KEY (Vercel AI Gateway) or OPENAI_API_KEY.");
   }
 
   cachedOpenAIEnv = {
-    OPENAI_API_KEY: apiKey,
+    AI_GATEWAY_API_KEY: gatewayKey,
+    OPENAI_API_KEY: openaiKey,
     OPENAI_MODEL:
       process.env.OPENAI_MODEL?.trim() || "gpt-6-luna",
   };
@@ -94,15 +103,20 @@ export function getAccessCodes(): AccessCodes {
 }
 
 export function getKyronMcpEnv(): KyronMcpEnv {
-  const appBaseUrl = (
-    process.env.APP_BASE_URL?.trim() || "http://localhost:3000"
-  ).replace(/\/+$/, "");
+  const appBaseUrl = getAppBaseUrl();
+  const configuredClientId = readClientIdUrl();
+  // On an https deployment the app hosts its own client file, so only
+  // local development needs KYRON_OAUTH_CLIENT_ID (a file hosted elsewhere).
+  const selfHostedClientId = appBaseUrl.startsWith("https://")
+    ? selfHostedKyronClientId()
+    : null;
 
   return {
     KYRON_MCP_URL:
       process.env.KYRON_MCP_URL?.trim() ||
       "https://www.kyronlearning.com/mcp",
-    KYRON_OAUTH_CLIENT_ID: readClientIdUrl(),
+    KYRON_OAUTH_CLIENT_ID: configuredClientId ?? selfHostedClientId,
+    KYRON_OAUTH_CLIENT_SELF_HOSTED: !configuredClientId && selfHostedClientId !== null,
     KYRON_OAUTH_REDIRECT_URI: `${appBaseUrl}/api/kyron-mcp/oauth/callback`,
     KYRON_TOKEN_FILE:
       process.env.KYRON_TOKEN_FILE?.trim() ||
@@ -112,6 +126,22 @@ export function getKyronMcpEnv(): KyronMcpEnv {
       .map((name) => name.trim())
       .filter(Boolean),
   };
+}
+
+// The address people open the app at: APP_BASE_URL, else Vercel's production
+// domain, else localhost.
+export function getAppBaseUrl(): string {
+  const vercelDomain = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
+  const value =
+    process.env.APP_BASE_URL?.trim() ||
+    (vercelDomain ? `https://${vercelDomain}` : "http://localhost:3000");
+
+  return value.replace(/\/+$/, "");
+}
+
+// The client ID Kyron uses when the app serves its own client file.
+export function selfHostedKyronClientId(): string {
+  return `${getAppBaseUrl()}${KYRON_CLIENT_FILE_PATH}`;
 }
 
 export function getTokenEncryptionKey(): Buffer {
@@ -130,13 +160,20 @@ export function getTokenEncryptionKey(): Buffer {
 }
 
 function readRequiredSecret(name: string): string {
-  const value = process.env[name]?.trim();
+  const value = readOptionalSecret(name);
 
-  if (!value || value.startsWith("replace_with")) {
+  if (!value) {
     throw new Error(`${name} is not configured.`);
   }
 
   return value;
+}
+
+// Empty and placeholder ("replace_with…") values count as unset.
+function readOptionalSecret(name: string): string | null {
+  const value = process.env[name]?.trim();
+
+  return value && !value.startsWith("replace_with") ? value : null;
 }
 
 function readClientIdUrl(): string | null {

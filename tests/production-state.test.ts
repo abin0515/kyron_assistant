@@ -57,9 +57,34 @@ describe("production stage", () => {
 
   it("blocks a course that failed in Kyron or spent its budget", () => {
     expect(productionStateFor({ ...base, workspace: workspace(14826), draftStatus: "error" }).stage).toBe("blocked");
+    // Checked only from pasted content: Kyron's error still counts.
+    expect(
+      productionStateFor({ ...base, workspace: workspace(14826), draftStatus: "error", lessonRun: run({ source: "manual" }) }).stage,
+    ).toBe("blocked");
     expect(productionStateFor({ ...base, costUsd: 1.2, workspace: workspace(14826) })).toMatchObject({
       stage: "blocked",
       needs: ["Raise QA_COURSE_BUDGET_USD or stop this course"],
     });
+  });
+
+  it("reports a failed video on the lesson run once QA checked the template from Kyron", () => {
+    const rendered = run({
+      source: "kyron_mcp",
+      media: { fileName: "Kyron render", byteSize: 0, source: "kyron_mcp", status: "failed", transcript: null, message: "x" },
+    });
+
+    // One failed video turns Kyron's whole draft to "error"; the template was generated.
+    expect(productionStateFor({ ...base, workspace: workspace(14826), draftStatus: "error", lessonRun: rendered })).toMatchObject({
+      stage: "review",
+      needs: ["The render failed; run QA again and approve a new render"],
+    });
+    expect(
+      productionStateFor({
+        ...base,
+        workspace: workspace(14826),
+        draftStatus: "started",
+        lessonRun: run({ source: "kyron_mcp", stage: "video", pendingSteps: [{ kind: "video_poll", attempt: 2 }] }),
+      }).stage,
+    ).toBe("video");
   });
 });

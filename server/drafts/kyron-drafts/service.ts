@@ -1,5 +1,6 @@
 import "server-only";
 
+import { keepGeneratedStatus } from "@/server/drafts/kyron-drafts/generated-status";
 import {
   listDraftsByIds,
   listDraftsByUser,
@@ -21,7 +22,7 @@ import {
   KyronClientError,
 } from "@/server/kyron/client";
 import { toDraft } from "@/server/kyron/normalize";
-import { queueQaForCompletedDraft } from "@/server/qa/service";
+import { draftTemplateChecked, queueQaForCompletedDraft } from "@/server/qa/service";
 import type {
   CreateDraftRequest,
   Draft,
@@ -44,12 +45,12 @@ export async function createDraftWithRequiredPersistence(
 
 export async function syncDraft(id: number): Promise<Draft> {
   try {
-    const collection = await getKyronLessonCollection(id);
-    const draft = toDraft(collection);
+    const reported = toDraft(await getKyronLessonCollection(id));
+    const draft = await withGeneratedStatus(reported);
 
     await persistDraft(draft);
 
-    if (draft.status === "done") {
+    if (reported.status === "done") {
       await notifyQaOfCompletedDraft(draft);
     }
 
@@ -79,11 +80,12 @@ export async function syncGeneratingDraftsForAllOwners(limit = POLLER_BATCH_SIZE
 
   for (const stored of drafts) {
     try {
-      const draft = toDraft(await getKyronLessonCollection(stored.id));
+      const reported = toDraft(await getKyronLessonCollection(stored.id));
+      const draft = await withGeneratedStatus(reported);
 
       await saveDraft(draft, { ...stored.createdBy, role: "user" });
 
-      if (draft.status === "done") {
+      if (reported.status === "done") {
         await notifyQaOfCompletedDraft(draft);
       }
 
@@ -97,6 +99,25 @@ export async function syncGeneratingDraftsForAllOwners(limit = POLLER_BATCH_SIZE
   }
 
   return synced;
+}
+
+// A template QA already checked stays generated (see keepGeneratedStatus).
+// If that cannot be looked up, Kyron's own status is used.
+async function withGeneratedStatus(draft: Draft): Promise<Draft> {
+  if (draft.status === "done") {
+    return draft;
+  }
+
+  try {
+    return keepGeneratedStatus(draft, await draftTemplateChecked(draft.id));
+  } catch (error) {
+    console.error("Could not check whether QA already read the draft.", {
+      draftId: draft.id,
+      message: error instanceof Error ? error.message : "Unknown error",
+    });
+
+    return draft;
+  }
 }
 
 export async function listCurrentUserDrafts(

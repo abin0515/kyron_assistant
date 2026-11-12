@@ -56,7 +56,11 @@ export function QaMediaPanel({
         <CardTitle>Video narration</CardTitle>
         <CardDescription>
           The video&apos;s speech is transcribed and compared with the approved narration.
-          {detail.contentWritable ? " Kyron videos are checked automatically." : " Upload the rendered video or its audio (25 MB at most)."}
+          {detail.contentWritable
+            ? " Kyron videos are checked automatically."
+            : detail.mediaUploadAvailable
+              ? " Upload the rendered video or its audio (25 MB at most)."
+              : ""}
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-3 text-sm">
@@ -66,7 +70,10 @@ export function QaMediaPanel({
               {media.status === "checked" ? "Checked" : media.status === "failed" ? "Failed" : "Pending"}
             </Badge>
             <span className="break-all">{media.fileName}</span>
-            <span className="text-muted-foreground">{(media.byteSize / 1024 / 1024).toFixed(1)} MB</span>
+            {/* Kyron renders have no file here (the size would be the captions' length). */}
+            {media.source === "upload" && media.byteSize > 0 ? (
+              <span className="text-muted-foreground">{(media.byteSize / 1024 / 1024).toFixed(1)} MB</span>
+            ) : null}
           </p>
         ) : (
           <p className="text-muted-foreground">No video checked yet.</p>
@@ -82,17 +89,23 @@ export function QaMediaPanel({
           Visual frame checks need ffmpeg, which is not installed, so visuals are covered by the
           human check.
         </p>
-        <label className="inline-flex h-9 w-fit cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-card px-3 text-[0.8rem] font-medium shadow-xs hover:bg-muted/70 has-disabled:cursor-not-allowed has-disabled:opacity-50">
-          {uploading ? <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin" /> : <Upload aria-hidden="true" className="size-3.5" />}
-          {media ? "Check another file" : "Upload video or audio"}
-          <input
-            accept="video/*,audio/*,.mp4,.m4a,.mp3,.wav,.webm,.ogg,.flac"
-            className="sr-only"
-            disabled={uploading || !detail.run.snapshotId}
-            onChange={(event) => void handleFile(event)}
-            type="file"
-          />
-        </label>
+        {detail.mediaUploadAvailable ? (
+          <label className="inline-flex h-9 w-fit cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-card px-3 text-[0.8rem] font-medium shadow-xs hover:bg-muted/70 has-disabled:cursor-not-allowed has-disabled:opacity-50">
+            {uploading ? <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin" /> : <Upload aria-hidden="true" className="size-3.5" />}
+            {media ? "Check another file" : "Upload video or audio"}
+            <input
+              accept="video/*,audio/*,.mp4,.m4a,.mp3,.wav,.webm,.ogg,.flac"
+              className="sr-only"
+              disabled={uploading || !detail.run.snapshotId}
+              onChange={(event) => void handleFile(event)}
+              type="file"
+            />
+          </label>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Uploading a video for this check isn&apos;t available on the deployed site yet.
+          </p>
+        )}
         {error ? <InlineNotice tone="error">{error}</InlineNotice> : null}
       </CardContent>
     </Card>

@@ -67,7 +67,9 @@ export async function runStructuredModel<T>({
         },
       },
     },
-    { timeout: MODEL_TIMEOUT_MS },
+    // One quick retry for a busy or failing gateway, not the client's two: a
+    // retry after a timeout cannot finish within the platform's time limit.
+    { timeout: MODEL_TIMEOUT_MS, maxRetries: 1 },
   );
   const usage: UsageRecord = {
     purpose,

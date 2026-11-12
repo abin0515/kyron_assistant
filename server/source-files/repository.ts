@@ -131,6 +131,25 @@ export async function expirePendingSourceFileUploads(
   `;
 }
 
+// The page gave up on this upload (the file was removed or is retried), so its
+// name is free again at once instead of after the token expires.
+export async function expirePendingSourceFileUploadById(
+  id: string,
+  userId: string,
+): Promise<void> {
+  const sql = getDatabase();
+
+  await sql`
+    UPDATE source_file_uploads
+    SET
+      status = 'expired',
+      record_updated_at = NOW()
+    WHERE id = ${id}
+      AND created_by_id = ${userId}
+      AND status = 'pending'
+  `;
+}
+
 export async function getPendingSourceFileUploadByName(
   originalName: string,
   userId: string,

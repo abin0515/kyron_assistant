@@ -18,6 +18,7 @@ const STAGES: Record<ProductionStage, { label: string; variant: "info" | "succes
   setup: { label: "Course setup", variant: "neutral" },
   generating: { label: "Kyron generating", variant: "info" },
   lesson_qa: { label: "Lesson QA", variant: "info" },
+  approval: { label: "Awaiting approval", variant: "warning" },
   video: { label: "Video", variant: "info" },
   review: { label: "Needs review", variant: "warning" },
   ready: { label: "Ready", variant: "success" },

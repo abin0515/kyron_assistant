@@ -33,7 +33,7 @@ export function QaRunPage({ isAdmin, runId }: { isAdmin: boolean; runId: string 
 
   return (
     <div className="grid gap-6">
-      <QaRunSummary detail={detail} />
+      <QaRunSummary detail={detail} onChanged={applyDetail} />
       {state.advanceError ? (
         <InlineNotice tone="warning">
           {state.advanceError} Retrying automatically.

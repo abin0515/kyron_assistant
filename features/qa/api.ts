@@ -54,6 +54,11 @@ export function rerunQaRun(runId: string) {
   return postJson<QaRunDetailResponse>(`/api/qa/runs/${runId}/rerun`, {});
 }
 
+// Lets video rendering start for a reviewed template (uses Kyron credits).
+export function approveQaRender(runId: string) {
+  return postJson<QaRunDetailResponse>(`/api/qa/runs/${runId}/approve-render`, {});
+}
+
 export function advanceQaRun(runId: string, signal?: AbortSignal) {
   return postJson<QaRunDetailResponse>(`/api/qa/runs/${runId}/advance`, {}, signal);
 }

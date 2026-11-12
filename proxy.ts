@@ -9,9 +9,10 @@ import {
 } from "next/server";
 
 import {
+  accessCodesAllowedOn,
   getAuthMode,
   getSessionSecret,
-  isLocalhostHostname,
+  SHORT_ACCESS_CODES_MESSAGE,
 } from "@/server/identity/auth-config";
 import {
   SESSION_COOKIE_NAME,
@@ -26,12 +27,15 @@ const isProtectedRoute = createRouteMatcher([
   "/qa(.*)",
   "/logs(.*)",
   "/api/qa(.*)",
+  "/api/batches(.*)",
+  "/api/production(.*)",
   "/api/logs(.*)",
   "/api/drafts(.*)",
   "/api/draft-workspaces(.*)",
   "/api/organization(.*)",
   "/api/kyron-folders(.*)",
   "/api/kyron-mcp(.*)",
+  "/api/kyron-content(.*)",
   "/api/source-files(.*)",
   "/api/source-files/complete",
   "/api/uploads(.*)",
@@ -60,12 +64,11 @@ export default function proxy(request: NextRequest, event: NextFetchEvent) {
 }
 
 async function accessCodeProxy(request: NextRequest) {
-  // Preset access codes are short, so this mode refuses to serve anywhere
-  // except the developer's own machine.
-  if (!isLocalhostHostname(request.nextUrl.hostname)) {
-    return new NextResponse("Access-code sign-in only runs on localhost.", {
-      status: 403,
-    });
+  // Short local codes only work on the developer's own machine; the deployed
+  // site needs long codes. A request counts as local only when every host it
+  // names is local.
+  if (!requestHostnames(request).every((hostname) => accessCodesAllowedOn(hostname))) {
+    return new NextResponse(SHORT_ACCESS_CODES_MESSAGE, { status: 403 });
   }
 
   const { pathname, search } = request.nextUrl;
@@ -96,6 +99,25 @@ async function accessCodeProxy(request: NextRequest) {
   signInUrl.searchParams.set("redirect_url", `${pathname}${search}`);
 
   return NextResponse.redirect(signInUrl);
+}
+
+// The URL host plus the Host and forwarded-host headers: on Vercel the URL
+// carries the real domain; elsewhere Next.js may report "localhost" for it.
+function requestHostnames(request: NextRequest): string[] {
+  const headerHosts = [request.headers.get("host"), request.headers.get("x-forwarded-host")]
+    .flatMap((value) => (value ? value.split(",") : []))
+    .map((value) => hostnameOf(value.trim()))
+    .filter((value): value is string => Boolean(value));
+
+  return [request.nextUrl.hostname, ...headerHosts];
+}
+
+function hostnameOf(host: string): string | null {
+  try {
+    return new URL(`http://${host}`).hostname;
+  } catch {
+    return host || null;
+  }
 }
 
 async function hasValidSession(request: NextRequest): Promise<boolean> {

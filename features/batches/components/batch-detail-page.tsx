@@ -9,7 +9,7 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import { InlineNotice } from "@/components/ui/inline-notice";
@@ -20,6 +20,12 @@ import {
   updateBatchWorkspace,
 } from "@/features/batches/api";
 import { BatchDraftList } from "@/features/batches/components/batch-draft-list";
+import {
+  generateEachSetup,
+  generationSummary,
+  keepWaitingRowsGenerating,
+  setupTargets,
+} from "@/features/batches/generation-queue";
 import { BatchReviewDrawer } from "@/features/batches/components/batch-review-drawer";
 import {
   deleteDraftWorkspace,
@@ -63,12 +69,51 @@ export function BatchDetailPage({ batchId }: { batchId: string }) {
     [batchId],
   );
 
+  // Generates the given rows one request each, then reads the batch once
+  // more and reports from the rows' final statuses.
+  const generateTargets = useCallback(
+    async (ids: string[], signal?: AbortSignal) => {
+      const { failedRequests } = await generateEachSetup({
+        batchId,
+        generate: generateBatchSetups,
+        ids,
+        onBatch: (next, waitingIds) => setBatch(keepWaitingRowsGenerating(next, waitingIds)),
+        signal,
+      });
+
+      if (signal?.aborted) {
+        return;
+      }
+
+      const { failed, unfinished } = generationSummary(await refreshBatch(signal), ids);
+
+      if (failed > 0) {
+        setError(`${failed} course setup${failed === 1 ? "" : "s"} could not be generated. See the rows marked with an error.`);
+      } else if (unfinished > 0 || failedRequests > 0) {
+        setError(
+          "Some course setups did not finish. Reopen this batch to continue them; one that was interrupted starts again after 10 minutes.",
+        );
+      } else {
+        setFeedback("Course setup generation finished for the selected files.");
+      }
+    },
+    [batchId, refreshBatch],
+  );
+
+  // Generation started from a button stops starting requests when the page
+  // closes, like the one started on load.
+  const userQueueRef = useRef<AbortController | null>(null);
+
+  useEffect(() => () => userQueueRef.current?.abort(), []);
+
   useEffect(() => {
     const controller = new AbortController();
 
     void getBatch(batchId, controller.signal)
       .then(async (result) => {
         setBatch(result);
+        // The rows show while their setups generate.
+        setLoading(false);
         const hasGenerationWork = result.workspaces.some(
           (workspace) =>
             workspace.status === "setup_pending" ||
@@ -81,13 +126,7 @@ export function BatchDetailPage({ batchId }: { batchId: string }) {
 
         setWorking(true);
         setBatch(markSetupsGenerating(result));
-        const generated = await generateBatchSetups(
-          batchId,
-          {},
-          controller.signal,
-        );
-        setBatch(generated);
-        setFeedback("Course setup generation finished for the selected files.");
+        await generateTargets(setupTargets(result), controller.signal);
       })
       .catch((loadError) => {
         if (!controller.signal.aborted) {
@@ -107,7 +146,7 @@ export function BatchDetailPage({ batchId }: { batchId: string }) {
       });
 
     return () => controller.abort();
-  }, [batchId]);
+  }, [batchId, generateTargets]);
 
   if (loading) {
     return <PageMessage message="Loading batch…" />;
@@ -155,13 +194,13 @@ export function BatchDetailPage({ batchId }: { batchId: string }) {
         : current,
     );
 
+    userQueueRef.current?.abort();
+    const controller = new AbortController();
+
+    userQueueRef.current = controller;
+
     try {
-      const result = await generateBatchSetups(
-        batchId,
-        workspaceIds ? { workspaceIds } : {},
-      );
-      setBatch(result);
-      setFeedback("Course setup generation finished for the selected files.");
+      await generateTargets(setupTargets(currentBatch, workspaceIds), controller.signal);
     } catch (generationError) {
       setError(
         errorMessage(
@@ -318,6 +357,11 @@ export function BatchDetailPage({ batchId }: { batchId: string }) {
       {feedback ? (
         <Message message={feedback} onClose={() => setFeedback("")} />
       ) : null}
+      {currentBatch.workspaces.some((workspace) => workspace.status === "setup_generating") ? (
+        <InlineNotice>
+          Keep this page open while course setups generate; reopening it continues the rest.
+        </InlineNotice>
+      ) : null}
 
       <section className="overflow-hidden rounded-xl border border-border/90 bg-card">
         <div className="flex flex-col gap-4 border-b border-border px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
@@ -355,6 +399,7 @@ export function BatchDetailPage({ batchId }: { batchId: string }) {
           onChange={setActiveFilter}
         />
         <BatchDraftList
+          busy={working}
           items={filteredItems}
           onEdit={setReviewId}
           onRemove={(id) => void removeWorkspace(id)}

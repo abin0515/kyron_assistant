@@ -69,8 +69,9 @@ keeping a human responsible for reviewing and submitting the course setup.
   existing library file.
 - Each direct Blob upload uses a short-lived owner-scoped session. After the
   Blob transfer, an explicit completion request verifies the object, saves its
-  metadata to Neon, and returns the list record; the Blob webhook provides an
-  idempotent fallback if the browser closes first.
+  metadata to Neon, and returns the list record. No Blob webhook is used (Vercel
+  calls it without a session); a transfer the browser never completes is not
+  added to the library.
 - A workspace-file relationship records one of two independent uses:
   `ai_input` or `kyron_attachment`.
 - A file can be reused by multiple workspaces and can have both uses in the

@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { LessonContentSource } from "@/server/qa/content-sources";
+import { KyronMcpError } from "@/server/kyron-mcp/errors";
+import { RenderNotSentError } from "@/server/qa/content-errors";
+import type { LessonContentSource, VideoJobStatus, VideoPollState } from "@/server/qa/content-sources";
 import type { EvaluationInput, EvaluationOutput } from "@/server/qa/evaluators/types";
 import type { LessonPacket } from "@/server/qa/types";
 import type { Revision } from "@/server/qa/revision-agent";
@@ -10,10 +12,16 @@ const mocks = vi.hoisted(() => ({
   setupSource: null as unknown,
   kyronSource: null as unknown,
   budgetProblem: null as string | null,
+  // Thrown once by the next budget read.
+  budgetError: null as Error | null,
   verdict: "resolves" as string,
   // One verdict per verifier call, in order; then `verdict`.
   verdicts: [] as string[],
   transcripts: [] as string[],
+  // Render status results (or errors to throw), in order.
+  videoStatuses: [] as Array<VideoJobStatus | Error>,
+  // Run the real structural rules instead of a passing stub.
+  realStructural: false,
 }));
 
 vi.mock("server-only", () => ({}));
@@ -36,7 +44,17 @@ vi.mock("@/server/kyron-mcp/service", async () => {
   return { withKyronReader: notConnected, withKyronWriter: notConnected, hasKyronWriteAccess: async () => false };
 });
 vi.mock("@/server/production/service", () => ({
-  courseBudgetProblem: async () => mocks.budgetProblem,
+  courseBudgetProblem: async () => {
+    const error = mocks.budgetError;
+
+    if (error) {
+      // Fails once, then reads normally.
+      mocks.budgetError = null;
+      throw error;
+    }
+
+    return mocks.budgetProblem;
+  },
   ensureProductionJob: async () => undefined,
 }));
 vi.mock("@/server/qa/defects", () => ({ recordDefect: vi.fn() }));
@@ -98,7 +116,11 @@ vi.mock("@/server/qa/evaluators", async (importOriginal) => {
     ...original,
     SCRIPT_EVALUATORS: {
       course_setup: fakeCourseSetup,
-      structural: passing("structural", ["structure.required-fields", "structure.no-placeholders", "structure.question-integrity"]),
+      structural: (input: EvaluationInput) =>
+        mocks.realStructural
+          ? original.SCRIPT_EVALUATORS.structural(input)
+          : passing("structural", ["structure.required-fields", "structure.no-placeholders", "structure.question-integrity"])(input),
+      length: original.SCRIPT_EVALUATORS.length,
       assessment: passing("assessment", ["assessment.key-correct", "assessment.single-best-answer"]),
       fidelity: fakeFidelity,
       consistency: passing("consistency", ["consistency.cross-field"]),
@@ -122,9 +144,15 @@ vi.mock("@/server/qa/revision-agent", async (importOriginal) => {
 });
 
 import { buildSetupPacket } from "@/server/qa/course-setup-fields";
-import { processNextStep, startQaRun } from "@/server/qa/pipeline";
+import { driveQaRunsUntil, processNextStep, startQaRun } from "@/server/qa/pipeline";
 import * as repository from "@/server/qa/repository";
-import { assertSetupReadyForSubmission, QaSubmissionGateError } from "@/server/qa/service";
+import {
+  approveRender,
+  assertSetupReadyForSubmission,
+  getRunDetail,
+  QaConflictError,
+  QaSubmissionGateError,
+} from "@/server/qa/service";
 import { buildSnapshot, readActivityField, writeActivityField } from "@/server/qa/snapshot";
 
 const store = repository as unknown as { reset(): void };
@@ -158,11 +186,15 @@ beforeEach(() => {
   delete process.env.QA_RUN_TOKEN_BUDGET;
   process.env.QA_AUDIT_RATE = "0";
   process.env.QA_VIDEO_POLL_MS = "0";
+  process.env.QA_STEP_RETRY_MS = "0";
   mocks.kyronSource = null;
   mocks.budgetProblem = null;
+  mocks.budgetError = null;
   mocks.verdict = "resolves";
   mocks.verdicts = [];
   mocks.transcripts = [];
+  mocks.videoStatuses = [];
+  mocks.realStructural = false;
 });
 
 afterEach(() => {
@@ -182,7 +214,7 @@ describe("course-setup QA inside generation", () => {
     const finished = await runToCompletion(run.id);
 
     expect(finished.stage).toBe("passed");
-    expect(finished.findings[0]).toMatchObject({ status: "fixed", repairAttempts: 1 });
+    expect(firstFinding(finished)).toMatchObject({ status: "fixed", repairAttempts: 1 });
     expect(setup.current().learningObjective).toBe(
       "Explain how training and test accuracy reveal overfitting.",
     );
@@ -273,6 +305,28 @@ describe("course-setup QA inside generation", () => {
       assertSetupReadyForSubmission({ override: false, user, workspace: fakeWorkspace("ws-3") }),
     ).resolves.toBeUndefined();
   });
+
+  it("asks to submit again when the check used most of the request, before logging an override", async () => {
+    const late = Date.now() - 151_000;
+
+    fakeSetupSource({ learningObjective: "Explain overfitting." });
+    await expect(
+      assertSetupReadyForSubmission({ override: false, startedAt: late, user, workspace: fakeWorkspace("ws-4") }),
+    ).rejects.toMatchObject({ reason: "checking", message: expect.stringContaining("Submit again") });
+
+    fakeSetupSource({ learningObjective: "Explain overfitting.", description: "UNFIXABLE" });
+    const workspace = fakeWorkspace("ws-5");
+
+    await expect(
+      assertSetupReadyForSubmission({ override: true, startedAt: late, user, workspace }),
+    ).rejects.toMatchObject({ reason: "checking" });
+
+    const run = await repository.getLatestWorkspaceRun("ws-5", "course_setup");
+
+    expect(run?.events.some((event) => event.message.includes("unresolved quality findings"))).toBe(false);
+    // The retry passes the settled check at once.
+    await expect(assertSetupReadyForSubmission({ override: true, user, workspace })).resolves.toBeUndefined();
+  });
 });
 
 describe("generated-lesson QA", () => {
@@ -299,7 +353,7 @@ describe("generated-lesson QA", () => {
     const finished = await runToCompletion(run.id);
 
     expect(finished.stage).toBe("changes_proposed");
-    expect(finished.findings[0]).toMatchObject({
+    expect(firstFinding(finished)).toMatchObject({
       status: "open",
       proposalAttempted: true,
       proposedPatch: { proposedValue: expect.stringContaining("does not always improve") },
@@ -329,8 +383,9 @@ describe("generated-lesson QA", () => {
     });
     const finished = await runToCompletion(run.id);
 
-    expect(finished.stage).toBe("passed");
-    expect(finished.findings[0]).toMatchObject({ status: "fixed", repairAttempts: 1 });
+    expect(finished.stage).toBe("awaiting_approval");
+    expect(finished.renderApproval).toMatchObject({ status: "pending", snapshotId: finished.snapshotId });
+    expect(firstFinding(finished)).toMatchObject({ status: "fixed", repairAttempts: 1 });
     expect(kyron.narration()).toContain("does not always improve");
 
     const [revised, generated] = await versionsOf(finished.lessonId);
@@ -361,8 +416,11 @@ describe("generated-lesson QA", () => {
 
     const finished = await runToCompletion(run.id);
 
-    expect(finished.stage).toBe("escalated");
-    expect(finished.findings[0].escalationReason).toContain("changed since it was checked");
+    // The person reviewing the template sees the escalation in the report.
+    expect(finished.stage).toBe("awaiting_approval");
+    expect(finished.stageMessage).toContain("flagged for human review");
+    expect(firstFinding(finished)).toMatchObject({ status: "escalated" });
+    expect(firstFinding(finished).escalationReason).toContain("changed since it was checked");
     expect((await versionsOf(finished.lessonId)).map((version) => version.author)).toEqual(["Kyron generation"]);
   });
 
@@ -378,12 +436,41 @@ describe("generated-lesson QA", () => {
     const finished = await runToCompletion(run.id);
     const [revised] = await versionsOf(finished.lessonId);
 
-    expect(finished.stage).toBe("passed");
+    expect(finished.stage).toBe("awaiting_approval");
     expect(kyron.scene("s2")).toContain("does not always improve");
     expect(kyron.scene("s1")).toBe("Overfitting means memorizing noise.");
     expect(revised.changes).toMatchObject([{ activityId: "intro", fieldPath: "scenes.s2.narration" }]);
     expect(finished.events.some((event) => event.message.startsWith("QA verifier: 1 resolves"))).toBe(true);
     expect(finished.usageByPurpose["qa.verify"]).toMatchObject({ calls: 1 });
+  });
+
+  it("rewrites nonsense narration instead of only noting it", async () => {
+    mocks.realStructural = true;
+
+    const packet = scenePacket();
+    const activity = packet.activities[0];
+    const scenes = (activity.scenes ?? []).map((scene) => (scene.id === "s1" ? { ...scene, narration: "abcdef" } : scene));
+    const kyron = fakeKyronSource({
+      ...packet,
+      activities: [{ ...activity, scenes, narration: scenes.map((scene) => scene.narration).join("\n\n") }],
+    });
+    const run = await startQaRun({
+      createdBy: "Tester",
+      lesson: await saveLesson("ws-1"),
+      snapshot: null,
+      source: "kyron_mcp",
+      target: "lesson",
+    });
+    const finished = await runToCompletion(run.id);
+
+    expect(finished.findings.find((finding) => finding.criterionId === "structure.no-placeholders")).toMatchObject({
+      severity: "major",
+      status: "fixed",
+      activityId: "intro",
+      fieldPath: "scenes.s1.narration",
+    });
+    expect(kyron.scene("s1")).toBe("Overfitting is when a model memorizes noise in its training data.");
+    expect(finished.stage).toBe("awaiting_approval");
   });
 
   it("undoes a fix the independent check rejects, tries again, and escalates after two attempts", async () => {
@@ -404,9 +491,9 @@ describe("generated-lesson QA", () => {
     expect(kyron.narration()).not.toContain("does not always improve");
     expect(finished.usageByPurpose["qa.revision"]).toMatchObject({ calls: 2 });
     expect(versions.filter((version) => version.author === "QA verifier")).toHaveLength(2);
-    expect(finished.findings[0]).toMatchObject({ status: "escalated", repairAttempts: 2 });
-    expect(finished.findings[0].escalationReason).toContain("Still failing after 2 automatic fixes");
-    expect(finished.findings[0].escalationReason).toContain("independent check rejected the last fix");
+    expect(firstFinding(finished)).toMatchObject({ status: "escalated", repairAttempts: 2 });
+    expect(firstFinding(finished).escalationReason).toContain("Still failing after 2 automatic fixes");
+    expect(firstFinding(finished).escalationReason).toContain("independent check rejected the last fix");
   });
 
   it("fixes a rejected change on the second attempt", async () => {
@@ -422,12 +509,12 @@ describe("generated-lesson QA", () => {
     });
     const finished = await runToCompletion(run.id);
 
-    expect(finished.stage).toBe("passed");
+    expect(finished.stage).toBe("awaiting_approval");
     expect(kyron.narration()).toContain("does not always improve");
-    expect(finished.findings[0]).toMatchObject({ status: "fixed", repairAttempts: 2, escalationReason: null });
+    expect(firstFinding(finished)).toMatchObject({ status: "fixed", repairAttempts: 2, escalationReason: null });
   });
 
-  it("renders the video after the script passes and re-renders once when the narration differs", async () => {
+  it("waits for approval, then renders and re-renders once when the narration differs", async () => {
     mocks.transcripts = ["MISMATCH: the avatar skipped a sentence", "Training accuracy does not always improve unseen performance."];
 
     const kyron = fakeKyronSource(fixedPacket(), { video: true });
@@ -438,6 +525,16 @@ describe("generated-lesson QA", () => {
       source: "kyron_mcp",
       target: "lesson",
     });
+    const reviewed = await runToCompletion(run.id);
+
+    // The script passed, but nothing is rendered until a person approves.
+    expect(reviewed.stage).toBe("awaiting_approval");
+    expect(kyron.renders()).toBe(0);
+
+    const approved = await approveRender(run.id, user);
+
+    expect(approved.run).toMatchObject({ stage: "video", renderApproval: { status: "approved", decidedBy: "Tester" } });
+
     const finished = await runToCompletion(run.id);
 
     expect(kyron.renders()).toBe(2);
@@ -445,6 +542,583 @@ describe("generated-lesson QA", () => {
     expect(finished.media).toMatchObject({ status: "checked", source: "kyron_mcp" });
     expect(finished.findings.find((finding) => finding.evaluator === "media")).toMatchObject({ status: "fixed" });
     expect(finished.stage).toBe("passed");
+  });
+
+  it("records the approval and renders nothing while video rendering is off", async () => {
+    const kyron = fakeKyronSource(fixedPacket());
+    const run = await startQaRun({
+      createdBy: "Tester",
+      lesson: await saveLesson("ws-1"),
+      snapshot: null,
+      source: "kyron_mcp",
+      target: "lesson",
+    });
+
+    await runToCompletion(run.id);
+
+    const approved = await approveRender(run.id, user);
+    const finished = await runToCompletion(run.id);
+
+    expect(approved.run.renderApproval).toMatchObject({ status: "approved", renderingOff: true });
+    expect(finished.stage).not.toBe("awaiting_approval");
+    expect(finished.stageMessage).toContain("video rendering is turned off");
+    expect(finished.pendingSteps).toEqual([]);
+    expect(kyron.renders()).toBe(0);
+  });
+
+  it("refuses an approval when the lesson changed in Kyron since QA checked it", async () => {
+    const kyron = fakeKyronSource(fixedPacket(), { video: true });
+    const run = await startQaRun({
+      createdBy: "Tester",
+      lesson: await saveLesson("ws-1"),
+      snapshot: null,
+      source: "kyron_mcp",
+      target: "lesson",
+    });
+
+    await runToCompletion(run.id);
+    kyron.setNarration("Someone edited this in Kyron after QA finished.");
+
+    await expect(approveRender(run.id, user)).rejects.toBeInstanceOf(QaConflictError);
+    expect(kyron.renders()).toBe(0);
+    expect((await repository.getRun(run.id))?.renderApproval?.status).toBe("pending");
+    expect((await repository.getLatestWorkspaceRun("ws-1", "lesson"))?.id).not.toBe(run.id);
+  });
+
+  it("never starts a render without an approval, even if one is queued", async () => {
+    const kyron = fakeKyronSource(fixedPacket(), { video: true });
+    const run = await startQaRun({
+      createdBy: "Tester",
+      lesson: await saveLesson("ws-1"),
+      snapshot: null,
+      source: "kyron_mcp",
+      target: "lesson",
+    });
+
+    await runToCompletion(run.id);
+    await repository.updateRun(run.id, (current) => ({ ...current, pendingSteps: [{ kind: "video_request" }] }));
+
+    const finished = await runToCompletion(run.id);
+
+    expect(kyron.renders()).toBe(0);
+    expect(finished.stage).toBe("awaiting_approval");
+    expect(finished.events.some((event) => event.message.includes("waits for a person's approval"))).toBe(true);
+  });
+
+  it("does not retry a failed render request, so one failure cannot pay twice", async () => {
+    const kyron = fakeKyronSource(fixedPacket(), { video: true, failRender: true });
+    const run = await startQaRun({
+      createdBy: "Tester",
+      lesson: await saveLesson("ws-1"),
+      snapshot: null,
+      source: "kyron_mcp",
+      target: "lesson",
+    });
+
+    await runToCompletion(run.id);
+    await approveRender(run.id, user);
+
+    const finished = await runToCompletion(run.id);
+
+    expect(kyron.attempts()).toBe(1);
+    expect(finished.videoRequests).toBe(1);
+    expect(finished.media).toMatchObject({ status: "failed" });
+  });
+
+  it("records a failed render by name and does not check the captions of the rest", async () => {
+    const failure = 'Kyron could not render the video for "Introduction".';
+
+    mocks.videoStatuses = [{ status: "pending" }, { status: "failed", message: failure }];
+
+    const kyron = fakeKyronSource(fixedPacket(), { video: true });
+    const run = await startQaRun({
+      createdBy: "Tester",
+      lesson: await saveLesson("ws-1"),
+      snapshot: null,
+      source: "kyron_mcp",
+      target: "lesson",
+    });
+
+    await runToCompletion(run.id);
+    await approveRender(run.id, user);
+
+    const finished = await runToCompletion(run.id);
+
+    expect(kyron.renders()).toBe(1);
+    expect(kyron.captionReads()).toBe(0);
+    expect(finished.media).toMatchObject({ status: "failed", message: failure, fileName: "Kyron render" });
+    expect(finished.stageMessage).toContain(failure);
+    expect(finished.events.some((event) => event.level === "error" && event.message.includes(failure))).toBe(true);
+  });
+
+  it("waits past the previous render's result until the new one is seen in progress", async () => {
+    // Right after the request Kyron still shows the old failure.
+    mocks.videoStatuses = [{ status: "failed", message: "old failure" }, { status: "pending" }, { status: "done" }];
+
+    const kyron = fakeKyronSource(fixedPacket(), { video: true });
+    const run = await startQaRun({
+      createdBy: "Tester",
+      lesson: await saveLesson("ws-1"),
+      snapshot: null,
+      source: "kyron_mcp",
+      target: "lesson",
+    });
+
+    await runToCompletion(run.id);
+    await approveRender(run.id, user);
+
+    const finished = await runToCompletion(run.id);
+
+    expect(kyron.statusChecks()).toBe(3);
+    expect(finished.media).toMatchObject({ status: "checked" });
+    expect(finished.videoRequests).toBe(1);
+  });
+
+  it("accepts a finished result after 10 checks when the render was never seen in progress", async () => {
+    mocks.videoStatuses = Array.from({ length: 12 }, () => ({ status: "done" as const }));
+
+    const kyron = fakeKyronSource(fixedPacket(), { video: true });
+    const run = await startQaRun({
+      createdBy: "Tester",
+      lesson: await saveLesson("ws-1"),
+      snapshot: null,
+      source: "kyron_mcp",
+      target: "lesson",
+    });
+
+    await runToCompletion(run.id);
+    await approveRender(run.id, user);
+
+    const finished = await runToCompletion(run.id);
+
+    expect(kyron.statusChecks()).toBe(10);
+    // The source is told when the tenth check's result will count.
+    expect(kyron.resultCounts()).toEqual([...Array.from({ length: 9 }, () => false), true]);
+    expect(finished.media).toMatchObject({ status: "checked" });
+  });
+
+  it("checks again after a Kyron hiccup instead of giving up on a paid render", async () => {
+    const hiccup = () => new KyronMcpError("KYRON_MCP_UNAVAILABLE", "Kyron MCP timed out.", true);
+
+    mocks.videoStatuses = [{ status: "pending" }, hiccup(), hiccup(), hiccup(), { status: "done" }];
+
+    const kyron = fakeKyronSource(fixedPacket(), { video: true });
+    const run = await startQaRun({
+      createdBy: "Tester",
+      lesson: await saveLesson("ws-1"),
+      snapshot: null,
+      source: "kyron_mcp",
+      target: "lesson",
+    });
+
+    await runToCompletion(run.id);
+    await approveRender(run.id, user);
+
+    const finished = await runToCompletion(run.id);
+
+    expect(kyron.renders()).toBe(1);
+    expect(finished.media).toMatchObject({ status: "checked" });
+    expect(finished.events.filter((event) => event.message.includes("checking again"))).toHaveLength(3);
+  });
+
+  it("gives a render's first check the state read before the request, then each check the last one's", async () => {
+    mocks.videoStatuses = [
+      { status: "pending", pollState: { staleFailures: [], sawRendering: true } },
+      { status: "pending", pollState: { staleFailures: [], sawRendering: true, staleWaits: 1 } },
+      { status: "done", pollState: { staleFailures: [] } },
+    ];
+
+    const kyron = fakeKyronSource(fixedPacket(), { video: true, baseline: { staleFailures: ["intro"] } });
+    const run = await startQaRun({
+      createdBy: "Tester",
+      lesson: await saveLesson("ws-1"),
+      snapshot: null,
+      source: "kyron_mcp",
+      target: "lesson",
+    });
+
+    await runToCompletion(run.id);
+    await approveRender(run.id, user);
+    await runToCompletion(run.id);
+
+    expect(kyron.pollStates()).toEqual([
+      { staleFailures: ["intro"] },
+      { staleFailures: [], sawRendering: true },
+      { staleFailures: [], sawRendering: true, staleWaits: 1 },
+    ]);
+  });
+
+  it("tells the source whether a finished result would count yet", async () => {
+    // Ignored: not yet seen rendering. Then seen in progress, and done counts.
+    mocks.videoStatuses = [{ status: "done" }, { status: "pending" }, { status: "done" }];
+
+    const kyron = fakeKyronSource(fixedPacket(), { video: true });
+    const run = await startQaRun({
+      createdBy: "Tester",
+      lesson: await saveLesson("ws-1"),
+      snapshot: null,
+      source: "kyron_mcp",
+      target: "lesson",
+    });
+
+    await runToCompletion(run.id);
+    await approveRender(run.id, user);
+
+    const finished = await runToCompletion(run.id);
+
+    expect(kyron.resultCounts()).toEqual([false, false, true]);
+    expect(finished.media).toMatchObject({ status: "checked" });
+  });
+
+  it("records when a waiting run's next check is due, so open pages can wait for it", async () => {
+    fakeKyronSource(fixedPacket(), { video: true });
+
+    const run = await startQaRun({
+      createdBy: "Tester",
+      lesson: await saveLesson("ws-1"),
+      snapshot: null,
+      source: "kyron_mcp",
+      target: "lesson",
+    });
+
+    // Steps that do not wait leave nothing due.
+    expect((await runToCompletion(run.id)).nextStepAt).toBeNull();
+    expect((await getRunDetail(run.id, user)).nextStepInMs).toBeNull();
+
+    process.env.QA_VIDEO_POLL_MS = "30000";
+    await approveRender(run.id, user);
+
+    const before = Date.now();
+    const requested = await processNextStep(run.id);
+
+    expect(requested?.pendingSteps[0]).toMatchObject({ kind: "video_poll" });
+    expect(requested?.nextStepAt).toBeGreaterThanOrEqual(before + 30_000);
+    expect(Math.abs((requested?.nextStepAt ?? 0) - (requested?.lease?.expiresAt ?? 0))).toBeLessThan(50);
+    // Nobody can take the run before then, and the page is told how long to wait.
+    expect(await processNextStep(run.id)).toBeNull();
+    expect((await getRunDetail(run.id, user)).nextStepInMs).toBeGreaterThan(29_000);
+
+    // Once it is due, a check that leaves no wait clears it.
+    process.env.QA_VIDEO_POLL_MS = "0";
+    vi.useFakeTimers({ toFake: ["Date"] });
+
+    try {
+      vi.setSystemTime(Date.now() + 30_001);
+
+      const checked = await processNextStep(run.id);
+
+      expect(checked?.pendingSteps[0]).toMatchObject({ kind: "video_poll", attempt: 2 });
+      expect(checked?.nextStepAt).toBeNull();
+      expect((await getRunDetail(run.id, user)).nextStepInMs).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("retries an error that happens before the render request is sent, without counting a render", async () => {
+    const kyron = fakeKyronSource(fixedPacket(), { video: true });
+    const run = await startQaRun({
+      createdBy: "Tester",
+      lesson: await saveLesson("ws-1"),
+      snapshot: null,
+      source: "kyron_mcp",
+      target: "lesson",
+    });
+
+    await runToCompletion(run.id);
+    await approveRender(run.id, user);
+    // The budget read fails once (a database hiccup), before anything reaches Kyron.
+    mocks.budgetError = new Error("fetch failed");
+
+    const finished = await runToCompletion(run.id);
+
+    expect(kyron.attempts()).toBe(1);
+    expect(finished.videoRequests).toBe(1);
+    expect(finished.media).toMatchObject({ status: "checked" });
+  });
+
+  it("clears the request marker when Kyron refuses before taking the request", async () => {
+    const kyron = fakeKyronSource(fixedPacket(), { video: true });
+    const run = await startQaRun({
+      createdBy: "Tester",
+      lesson: await saveLesson("ws-1"),
+      snapshot: null,
+      source: "kyron_mcp",
+      target: "lesson",
+    });
+
+    await runToCompletion(run.id);
+    await approveRender(run.id, user);
+    (mocks.kyronSource as { requestVideo: () => Promise<string> }).requestVideo = async () => {
+      throw new KyronMcpError("KYRON_MCP_NOT_CONNECTED", "Kyron is not connected. Use Connect Kyron first.");
+    };
+
+    const finished = await runToCompletion(run.id);
+
+    expect(kyron.renders()).toBe(0);
+    expect(finished.stage).toBe("blocked");
+    expect(finished.videoRequestStartedAt ?? null).toBeNull();
+    expect(finished.videoRequests ?? 0).toBe(0);
+  });
+
+  it("stops after a second try when a status check keeps failing for good", async () => {
+    mocks.videoStatuses = [{ status: "pending" }, new Error("Kyron validate_lesson failed: bad input."), new Error("Kyron validate_lesson failed: bad input.")];
+
+    const kyron = fakeKyronSource(fixedPacket(), { video: true });
+    const run = await startQaRun({
+      createdBy: "Tester",
+      lesson: await saveLesson("ws-1"),
+      snapshot: null,
+      source: "kyron_mcp",
+      target: "lesson",
+    });
+
+    await runToCompletion(run.id);
+    await approveRender(run.id, user);
+
+    const finished = await runToCompletion(run.id);
+
+    expect(kyron.statusChecks()).toBe(3);
+    expect(finished.media).toMatchObject({
+      status: "failed",
+      message: "The video check could not finish: Kyron validate_lesson failed: bad input.",
+    });
+    expect(finished.stageMessage).toContain("The video check could not finish");
+  });
+
+  it("does not send an interrupted re-render request again", async () => {
+    const kyron = fakeKyronSource(fixedPacket(), { video: true });
+    const run = await startQaRun({
+      createdBy: "Tester",
+      lesson: await saveLesson("ws-1"),
+      snapshot: null,
+      source: "kyron_mcp",
+      target: "lesson",
+    });
+
+    await runToCompletion(run.id);
+    await approveRender(run.id, user);
+    await runToCompletion(run.id);
+    // After the first render, a re-render request saved its marker, then the process died.
+    await repository.updateRun(run.id, (current) => ({
+      ...current,
+      pendingSteps: [{ kind: "video_request" }],
+      videoRequestStartedAt: "2026-11-11T12:00:00.000Z",
+    }));
+
+    const finished = await runToCompletion(run.id);
+
+    expect(kyron.attempts()).toBe(1);
+    expect(finished.videoRequests).toBe(2);
+    expect(finished.events.some((event) => event.message.includes("interrupted earlier"))).toBe(true);
+  });
+
+  it("measures lengths and flags misfits without blocking or fixing them", async () => {
+    // Normal (a 900-second lesson): the few-second intro video is far too short.
+    fakeKyronSource({ ...fixedPacket(), lesson: { ...fixedPacket().lesson, durationSeconds: 900 } });
+
+    const run = await startQaRun({
+      createdBy: "Tester",
+      lesson: await saveLesson("ws-1"),
+      snapshot: null,
+      source: "kyron_mcp",
+      target: "lesson",
+    });
+    const finished = await runToCompletion(run.id);
+    const lengthFinding = finished.findings.find((finding) => finding.evaluator === "length");
+
+    expect(finished.lengths).toMatchObject({ level: "normal", assets: [{ activityId: "intro", kind: "video" }] });
+    expect(lengthFinding).toMatchObject({ severity: "minor", status: "open", proposedPatch: null });
+    expect(finished.stage).toBe("awaiting_approval");
+  });
+
+  it("refuses an approval while the budget is spent, so no render goes unchecked", async () => {
+    const kyron = fakeKyronSource(fixedPacket(), { video: true });
+    const run = await startQaRun({
+      createdBy: "Tester",
+      lesson: await saveLesson("ws-1"),
+      snapshot: null,
+      source: "kyron_mcp",
+      target: "lesson",
+    });
+
+    await runToCompletion(run.id);
+    mocks.budgetProblem = "This course reached its model budget ($1.0000 of $1.00).";
+
+    await expect(approveRender(run.id, user)).rejects.toThrow("No render was started");
+    expect((await repository.getRun(run.id))?.renderApproval?.status).toBe("pending");
+    expect(kyron.renders()).toBe(0);
+  });
+
+  it("approves again to render once rendering is turned on", async () => {
+    const kyron = fakeKyronSource(fixedPacket());
+    const run = await startQaRun({
+      createdBy: "Tester",
+      lesson: await saveLesson("ws-1"),
+      snapshot: null,
+      source: "kyron_mcp",
+      target: "lesson",
+    });
+
+    await runToCompletion(run.id);
+    await approveRender(run.id, user);
+    await expect(approveRender(run.id, user)).rejects.toThrow("still turned off");
+
+    (mocks.kyronSource as { supportsVideo: boolean }).supportsVideo = true;
+
+    const again = await approveRender(run.id, user);
+
+    expect(again.run.renderApproval).toMatchObject({ status: "approved", renderingOff: false });
+
+    await runToCompletion(run.id);
+    expect(kyron.renders()).toBe(1);
+  });
+
+  it("lets only the owner or the admin approve, and only the latest check", async () => {
+    fakeKyronSource(fixedPacket(), { video: true });
+
+    const lesson = await saveLesson("ws-1");
+    const first = await startQaRun({ createdBy: "Tester", lesson, snapshot: null, source: "kyron_mcp", target: "lesson" });
+
+    await runToCompletion(first.id);
+
+    const staff = { id: "access-developer", name: "CPE Test", email: "d@example.com", role: "developer" as const };
+
+    await expect(approveRender(first.id, staff)).rejects.toThrow("not found");
+
+    const second = await startQaRun({ createdBy: "Tester", lesson, snapshot: null, source: "kyron_mcp", target: "lesson" });
+
+    await runToCompletion(second.id);
+    await expect(approveRender(first.id, user)).rejects.toThrow("newer QA check");
+  });
+
+  it("does not request a render again after an interrupted request", async () => {
+    const kyron = fakeKyronSource(fixedPacket(), { video: true });
+    const run = await startQaRun({
+      createdBy: "Tester",
+      lesson: await saveLesson("ws-1"),
+      snapshot: null,
+      source: "kyron_mcp",
+      target: "lesson",
+    });
+
+    await runToCompletion(run.id);
+    await approveRender(run.id, user);
+    // The earlier attempt saved its marker and baseline, and then the process died.
+    await repository.updateRun(run.id, (current) => ({
+      ...current,
+      videoRequestStartedAt: "2026-11-11T12:00:00.000Z",
+      videoPollState: { staleFailures: ["intro"] },
+    }));
+
+    const finished = await runToCompletion(run.id);
+
+    expect(kyron.attempts()).toBe(0);
+    expect(kyron.pollStates()[0]).toEqual({ staleFailures: ["intro"] });
+    expect(finished.videoRequests).toBe(1);
+    expect(finished.events.some((event) => event.message.includes("interrupted earlier"))).toBe(true);
+  });
+
+  it("keeps checking an interrupted request's render even once the budget is spent", async () => {
+    const kyron = fakeKyronSource(fixedPacket(), { video: true });
+    const run = await startQaRun({
+      createdBy: "Tester",
+      lesson: await saveLesson("ws-1"),
+      snapshot: null,
+      source: "kyron_mcp",
+      target: "lesson",
+    });
+
+    await runToCompletion(run.id);
+    await approveRender(run.id, user);
+    await repository.updateRun(run.id, (current) => ({ ...current, videoRequestStartedAt: "2026-11-11T12:00:00.000Z" }));
+    // Another check of the course spent the budget while this one was down.
+    mocks.budgetProblem = "This course reached its model budget ($1.0000 of $1.00).";
+
+    const finished = await runToCompletion(run.id);
+
+    expect(kyron.attempts()).toBe(0);
+    expect(kyron.statusChecks()).toBeGreaterThan(0);
+    // The render is counted, not reported as never requested.
+    expect(finished.videoRequests).toBe(1);
+    expect(finished.events.some((event) => event.message.includes("No render was requested"))).toBe(false);
+  });
+
+  it("retries a render request that failed before reaching Kyron, and pays once", async () => {
+    const kyron = fakeKyronSource(fixedPacket(), { video: true });
+    const run = await startQaRun({
+      createdBy: "Tester",
+      lesson: await saveLesson("ws-1"),
+      snapshot: null,
+      source: "kyron_mcp",
+      target: "lesson",
+    });
+    const source = mocks.kyronSource as { requestVideo: (lesson: QaLesson) => Promise<string> };
+    const send = source.requestVideo;
+    let calls = 0;
+
+    await runToCompletion(run.id);
+    await approveRender(run.id, user);
+    // The first try times out while connecting to Kyron.
+    source.requestVideo = async (lesson) => {
+      calls += 1;
+
+      if (calls === 1) {
+        throw new RenderNotSentError(new KyronMcpError("KYRON_MCP_UNAVAILABLE", "Kyron MCP timed out.", true));
+      }
+
+      return send(lesson);
+    };
+
+    const finished = await runToCompletion(run.id);
+
+    expect(calls).toBe(2);
+    expect(kyron.renders()).toBe(1);
+    expect(finished.videoRequests).toBe(1);
+    expect(finished.media).toMatchObject({ status: "checked" });
+    expect(finished.events.some((event) => event.message.includes("before anything was sent to Kyron"))).toBe(true);
+  });
+
+  it("does not count an old error alone as the render being seen in progress", async () => {
+    // Only waiting on an old error, then every video ready: still the old state?
+    mocks.videoStatuses = [
+      { status: "pending", inProgress: false },
+      ...Array.from({ length: 12 }, () => ({ status: "done" as const })),
+    ];
+
+    const kyron = fakeKyronSource(fixedPacket(), { video: true });
+    const run = await startQaRun({
+      createdBy: "Tester",
+      lesson: await saveLesson("ws-1"),
+      snapshot: null,
+      source: "kyron_mcp",
+      target: "lesson",
+    });
+
+    await runToCompletion(run.id);
+    await approveRender(run.id, user);
+
+    const finished = await runToCompletion(run.id);
+
+    expect(kyron.statusChecks()).toBe(10);
+    expect(finished.media).toMatchObject({ status: "checked" });
+
+    // Seen rendering after that: the result counts at once.
+    mocks.videoStatuses = [{ status: "pending", inProgress: false }, { status: "pending" }, { status: "done" }];
+
+    const again = fakeKyronSource(fixedPacket(), { video: true });
+    const second = await startQaRun({
+      createdBy: "Tester",
+      lesson: await saveLesson("ws-2"),
+      snapshot: null,
+      source: "kyron_mcp",
+      target: "lesson",
+    });
+
+    await runToCompletion(second.id);
+    await approveRender(second.id, user);
+    await runToCompletion(second.id);
+    expect(again.statusChecks()).toBe(3);
   });
 
   it("stops model calls once the course reaches its budget", async () => {
@@ -479,6 +1153,182 @@ describe("generated-lesson QA", () => {
 
     expect(finished.stage).toBe("blocked");
     expect(finished.stageMessage).toContain("token budget");
+  });
+});
+
+// On Vercel a function is stopped after 300 s, without running any catch:
+// the step's claim is never released and its lease runs out.
+describe("steps whose attempt never finished", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  async function stopAttempt(runId: string) {
+    expect(await repository.claimRun(runId)).not.toBeNull();
+    vi.setSystemTime(Date.now() + 300_001);
+  }
+
+  async function lessonRun() {
+    return startQaRun({
+      createdBy: "Tester",
+      lesson: await saveLesson("ws-1"),
+      snapshot: null,
+      source: "kyron_mcp",
+      target: "lesson",
+    });
+  }
+
+  async function approvedRender(kyron: ReturnType<typeof fakeKyronSource>) {
+    const run = await lessonRun();
+
+    await runToCompletion(run.id);
+    await approveRender(run.id, user);
+    expect(kyron.attempts()).toBe(0);
+
+    return run;
+  }
+
+  it("counts a stopped step as a failure, tries it once more, then stops the run", async () => {
+    fakeKyronSource(fixedPacket());
+    const run = await lessonRun();
+
+    await stopAttempt(run.id);
+    const retried = await processNextStep(run.id);
+
+    expect(retried?.pendingSteps[0]).toEqual({ kind: "snapshot" });
+    expect(retried?.claimsWithoutRelease).toBe(0);
+    expect(retried?.events.at(-1)?.message).toContain("did not finish within 5 minutes");
+
+    await stopAttempt(run.id);
+    const stopped = await processNextStep(run.id);
+
+    expect(stopped?.stage).toBe("blocked");
+    expect(stopped?.stageMessage).toContain("did not finish within 5 minutes");
+  });
+
+  it("marks a check stopped twice as not tested and goes on", async () => {
+    fakeKyronSource(fixedPacket());
+    const run = await lessonRun();
+    const check = (await processNextStep(run.id))?.pendingSteps[0];
+
+    expect(check?.kind).toBe("check");
+
+    await stopAttempt(run.id);
+    await processNextStep(run.id);
+    await stopAttempt(run.id);
+
+    const after = await processNextStep(run.id);
+
+    expect(after?.pendingSteps[0]).not.toEqual(check);
+    expect(after?.events.at(-1)?.message).toMatch(/could not run: The step did not finish within 5 minutes/);
+  });
+
+  it("keeps checking a paid render through stopped checks, up to six tries", async () => {
+    const kyron = fakeKyronSource(fixedPacket(), { video: true });
+    const run = await approvedRender(kyron);
+
+    expect((await processNextStep(run.id))?.pendingSteps[0]).toMatchObject({ kind: "video_poll" });
+
+    for (let stopped = 1; stopped <= 5; stopped += 1) {
+      await stopAttempt(run.id);
+      expect((await processNextStep(run.id))?.pendingSteps[0]).toMatchObject({ kind: "video_poll" });
+    }
+
+    await stopAttempt(run.id);
+
+    expect((await processNextStep(run.id))?.media).toMatchObject({
+      status: "failed",
+      message: expect.stringContaining("did not finish within 5 minutes"),
+    });
+    expect(kyron.renders()).toBe(1);
+  });
+
+  it("never sends a render request again once Kyron may have it", async () => {
+    const kyron = fakeKyronSource(fixedPacket(), { video: true });
+    const run = await approvedRender(kyron);
+
+    // Stopped after the request marker was saved.
+    await repository.updateRun(run.id, (current) => ({ ...current, videoRequestStartedAt: new Date().toISOString() }));
+    await stopAttempt(run.id);
+
+    const resumed = await processNextStep(run.id);
+
+    expect(kyron.attempts()).toBe(0);
+    expect(resumed?.pendingSteps[0]).toMatchObject({ kind: "video_poll" });
+    expect(resumed?.videoRequests).toBe(1);
+  });
+
+  it("keeps the request marker when picking up an earlier request fails, so no second render is sent", async () => {
+    const kyron = fakeKyronSource(fixedPacket(), { video: true });
+    const run = await approvedRender(kyron);
+
+    await repository.updateRun(run.id, (current) => ({ ...current, videoRequestStartedAt: new Date().toISOString() }));
+    await stopAttempt(run.id);
+
+    // A passing database error while the resumed attempt starts.
+    const getLesson = vi.spyOn(repository, "getLesson").mockRejectedValueOnce(new Error("fetch failed"));
+    const retried = await processNextStep(run.id);
+
+    getLesson.mockRestore();
+
+    expect(retried?.videoRequestStartedAt).toBeTruthy();
+    expect(retried?.events.at(-1)?.message).toContain("picking up the earlier render request");
+    expect((await processNextStep(run.id))?.pendingSteps[0]).toMatchObject({ kind: "video_poll" });
+    expect(kyron.attempts()).toBe(0);
+  });
+
+  it("counts a render request stopped before anything was sent, then sends it once", async () => {
+    const kyron = fakeKyronSource(fixedPacket(), { video: true });
+    const run = await approvedRender(kyron);
+
+    await stopAttempt(run.id);
+
+    const retried = await processNextStep(run.id);
+
+    expect(kyron.attempts()).toBe(0);
+    expect(retried?.pendingSteps[0]).toEqual({ kind: "video_request" });
+    expect(retried?.events.at(-1)?.message).toContain("before anything was sent to Kyron");
+
+    await processNextStep(run.id);
+
+    expect(kyron.attempts()).toBe(1);
+  });
+
+  it("waits before trying a failed step again", async () => {
+    process.env.QA_STEP_RETRY_MS = "30000";
+    fakeKyronSource(fixedPacket());
+
+    const run = await lessonRun();
+
+    await stopAttempt(run.id);
+
+    expect((await processNextStep(run.id))?.nextStepAt).toBe(Date.now() + 30_000);
+    expect(await processNextStep(run.id)).toBeNull();
+  });
+});
+
+describe("the scheduler tick", () => {
+  it("keeps advancing runs until nothing is left or its window closes", async () => {
+    fakeKyronSource(fixedPacket());
+
+    const run = await startQaRun({
+      createdBy: "Tester",
+      lesson: await saveLesson("ws-1"),
+      snapshot: null,
+      source: "kyron_mcp",
+      target: "lesson",
+    });
+
+    // The window is already over: one round only.
+    expect(await driveQaRunsUntil(Date.now() - 1)).toBe(1);
+    expect((await repository.getRun(run.id))?.pendingSteps.length).toBeGreaterThan(0);
+
+    expect(await driveQaRunsUntil(Date.now() + 45_000)).toBeGreaterThan(1);
+    expect((await repository.getRun(run.id))?.pendingSteps).toEqual([]);
   });
 });
 
@@ -592,9 +1442,20 @@ function fakeSetupSource(overrides: { learningObjective: string; description?: s
   };
 }
 
-function fakeKyronSource(initial: LessonPacket, { video = false } = {}) {
+function fakeKyronSource(
+  initial: LessonPacket,
+  { baseline = null, failRender = false, video = false }: { baseline?: VideoPollState | null; failRender?: boolean; video?: boolean } = {},
+) {
   let current = structuredClone(initial);
   let renders = 0;
+  let attempts = 0;
+  // Status checks since the last render request, the state each was given,
+  // and caption reads.
+  let statusChecks = 0;
+  const pollStates: Array<VideoPollState | null> = [];
+  // Whether the pipeline said each check's finished result would count.
+  const resultCounts: Array<boolean | undefined> = [];
+  let captionReads = 0;
   const unused = async () => {
     throw new Error("not used");
   };
@@ -619,16 +1480,47 @@ function fakeKyronSource(initial: LessonPacket, { video = false } = {}) {
       };
     },
     requestVideo: async () => {
+      attempts += 1;
+
+      if (failRender) {
+        throw new Error("Kyron timed out after accepting the request.");
+      }
+
       renders += 1;
+      statusChecks = 0;
 
       return `render-${renders}`;
     },
-    getVideoStatus: async () => "done" as const,
+    // Scripted results first; otherwise each render is seen in progress once,
+    // then reported done.
+    ...(baseline ? { readVideoBaseline: async () => baseline } : {}),
+    getVideoStatus: async (_lesson, _jobId, pollState, options) => {
+      statusChecks += 1;
+      pollStates.push(pollState ?? null);
+      resultCounts.push(options?.resultCounts);
+
+      const next = mocks.videoStatuses.shift();
+
+      if (next instanceof Error) {
+        throw next;
+      }
+
+      return next ?? (statusChecks === 1 ? { status: "pending" } : { status: "done" });
+    },
     downloadVideo: unused,
-    readRenderedNarration: async () => mocks.transcripts[renders - 1] ?? "",
+    readRenderedNarration: async () => {
+      captionReads += 1;
+
+      return mocks.transcripts[renders - 1] ?? "";
+    },
   } satisfies LessonContentSource;
 
   return {
+    attempts: () => attempts,
+    captionReads: () => captionReads,
+    pollStates: () => pollStates,
+    resultCounts: () => resultCounts,
+    statusChecks: () => statusChecks,
     renders: () => renders,
     scene: (id: string) => current.activities[0].scenes?.find((scene) => scene.id === id)?.narration ?? "",
     narration: () => current.activities[0].narration ?? "",
@@ -650,6 +1542,19 @@ function fakeRevision(finding: QaFinding, snapshot: QaLessonSnapshot): Revision 
 
   if (!activity) {
     return null;
+  }
+
+  // Nonsense text is replaced with real narration in the field it was found in.
+  if (finding.criterionId === "structure.no-placeholders" && finding.fieldPath) {
+    return {
+      findingIds: [finding.id],
+      activityId: activity.id,
+      fieldPath: finding.fieldPath,
+      currentValue: readActivityField(activity, finding.fieldPath) ?? "",
+      proposedValue: "Overfitting is when a model memorizes noise in its training data.",
+      rationale: "Replace nonsense with real narration.",
+      protectedField: false,
+    };
   }
 
   const scene = activity.scenes?.find((candidate) => candidate.narration?.includes("always improves"));
@@ -769,4 +1674,16 @@ async function fakeFidelity({ activityIds, snapshot }: EvaluationInput): Promise
     })),
     usage: [{ purpose: "qa.fidelity", inputTokens: 100, outputTokens: 50, reasoningTokens: 10 }],
   };
+}
+
+// The first finding other than the length check's (which runs early and is
+// only informational).
+function firstFinding(run: { findings: QaFinding[] }): QaFinding {
+  const finding = run.findings.find((candidate) => candidate.evaluator !== "length");
+
+  if (!finding) {
+    throw new Error("The run has no finding besides length.");
+  }
+
+  return finding;
 }

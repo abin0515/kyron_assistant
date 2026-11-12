@@ -21,10 +21,13 @@ type DialogView = "closed" | "picker" | "upload";
 export function WorkspaceSourceFiles({
   disabled,
   onAiSourceFilesChange,
+  onAttachmentLinked,
   workspaceId,
 }: {
   disabled: boolean;
   onAiSourceFilesChange: (hasFiles: boolean) => void;
+  // Called after a PDF or PowerPoint was also linked as the Kyron attachment.
+  onAttachmentLinked?: () => void;
   workspaceId: string;
 }) {
   const requestControllerRef = useRef<AbortController | null>(null);
@@ -78,12 +81,36 @@ export function WorkspaceSourceFiles({
     setErrorMessage(null);
 
     try {
+      const previousIds = new Set(aiFiles.map((file) => file.id));
       const response = await updateWorkspaceSourceFiles(workspaceId, {
         purpose: "ai_input",
         sourceFileIds,
       });
+
       setLinkedFiles(response.files);
       setDialogView("closed");
+
+      // One upload serves both: a newly added PDF or PowerPoint also goes to
+      // Kyron, unless an attachment is already chosen. Removing a file never
+      // re-links one.
+      const attachment = attachmentCandidate(
+        response.files,
+        sourceFileIds.filter((id) => !previousIds.has(id)),
+      );
+
+      if (attachment) {
+        try {
+          const linked = await updateWorkspaceSourceFiles(workspaceId, {
+            purpose: "kyron_attachment",
+            sourceFileIds: [attachment.id],
+          });
+
+          setLinkedFiles(linked.files);
+          onAttachmentLinked?.();
+        } catch (error) {
+          setErrorMessage(`The file was added for the AI, but it could not be set as the Kyron attachment: ${messageFromError(error)}`);
+        }
+      }
     } catch (error) {
       setErrorMessage(messageFromError(error));
     } finally {
@@ -111,8 +138,8 @@ export function WorkspaceSourceFiles({
         <div className="grid gap-1">
           <p className="text-sm font-semibold">Source files</p>
           <p className="text-muted-foreground max-w-xl text-xs">
-            Save reusable files with this workspace for AI course setup
-            analysis.
+            Files the AI reads to plan the course. The first PDF or PowerPoint
+            is also sent to Kyron as the course material.
           </p>
         </div>
         {!disabled ? (
@@ -175,13 +202,13 @@ export function WorkspaceSourceFiles({
           <FilePlus2 aria-hidden="true" className="text-muted-foreground size-5" />
           <p className="text-sm font-semibold">No source files selected</p>
           <p className="text-muted-foreground text-xs">
-            You can still generate from the brief or transcript above.
+            You can still generate the plan from the prompt above.
           </p>
         </div>
       )}
 
       <p className="text-muted-foreground text-xs">
-        Selected files are analyzed when you generate the course setup.
+        Selected files are read when you generate the plan.
       </p>
       {errorMessage && dialogView === "closed" ? (
         <p className="text-destructive text-xs" role="alert">
@@ -237,4 +264,22 @@ function messageFromError(error: unknown): string {
   return error instanceof Error
     ? error.message
     : "Source files could not be updated.";
+}
+
+// The first newly added AI source (in the order chosen) that a Kyron draft
+// can carry, when no attachment is set yet.
+function attachmentCandidate(files: WorkspaceSourceFileItem[], addedIds: string[]): WorkspaceSourceFileItem | null {
+  if (files.some((file) => file.purpose === "kyron_attachment")) {
+    return null;
+  }
+
+  for (const id of addedIds) {
+    const file = files.find((candidate) => candidate.id === id && candidate.purpose === "ai_input");
+
+    if (file && (file.type === "pdf" || file.type === "pptx")) {
+      return file;
+    }
+  }
+
+  return null;
 }

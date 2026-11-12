@@ -157,6 +157,21 @@ describe("Kyron OAuth token handling", () => {
     await expect(exchange).rejects.toMatchObject({ code: "KYRON_MCP_NOT_CONNECTED" });
   });
 
+  it("treats a busy sign-in service as worth another try, not as a refused sign-in", async () => {
+    const pending = createPendingAuthorization(clientId, redirectUri, now);
+
+    for (const status of [429, 503]) {
+      const exchange = exchangeAuthorizationCode(
+        server,
+        pending,
+        "code",
+        vi.fn(async () => new Response("Service unavailable", { status })) as typeof fetch,
+      );
+
+      await expect(exchange).rejects.toMatchObject({ code: "KYRON_MCP_UNAVAILABLE", retryable: true });
+    }
+  });
+
   it("keeps the previous refresh token when Kyron does not rotate it", () => {
     expect(
       parseTokenResponse({ access_token: "access-2", token_type: "bearer" }, now, "refresh-1"),

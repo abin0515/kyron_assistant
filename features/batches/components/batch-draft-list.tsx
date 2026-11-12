@@ -19,6 +19,8 @@ import type {
 } from "@/features/batches/types";
 
 type BatchDraftListProps = {
+  // A generation queue is running: row actions wait for it.
+  busy: boolean;
   items: BatchDraftItem[];
   selectedIds: string[];
   onEdit: (id: string) => void;
@@ -29,6 +31,7 @@ type BatchDraftListProps = {
 };
 
 export function BatchDraftList({
+  busy,
   items,
   selectedIds,
   onEdit,
@@ -65,6 +68,7 @@ export function BatchDraftList({
       <div className="divide-y divide-border md:hidden">
         {items.map((item) => (
           <MobileBatchItem
+            busy={busy}
             item={item}
             key={item.id}
             onEdit={onEdit}
@@ -100,6 +104,7 @@ export function BatchDraftList({
           <tbody className="divide-y divide-border">
             {items.map((item) => (
               <DesktopBatchItem
+                busy={busy}
                 item={item}
                 key={item.id}
                 onEdit={onEdit}
@@ -117,6 +122,7 @@ export function BatchDraftList({
 }
 
 function DesktopBatchItem({
+  busy,
   item,
   selected,
   onEdit,
@@ -173,6 +179,7 @@ function DesktopBatchItem({
       </td>
       <td className="px-5 py-4">
         <ItemActions
+          busy={busy}
           item={item}
           onEdit={onEdit}
           onRemove={onRemove}
@@ -184,7 +191,7 @@ function DesktopBatchItem({
 }
 
 function MobileBatchItem(props: BatchItemProps) {
-  const { item, selected, onEdit, onRemove, onRetry, onSelectionChange } =
+  const { busy, item, selected, onEdit, onRemove, onRetry, onSelectionChange } =
     props;
 
   return (
@@ -214,6 +221,7 @@ function MobileBatchItem(props: BatchItemProps) {
         </p>
       </div>
       <ItemActions
+        busy={busy}
         item={item}
         onEdit={onEdit}
         onRemove={onRemove}
@@ -224,6 +232,7 @@ function MobileBatchItem(props: BatchItemProps) {
 }
 
 type BatchItemProps = {
+  busy: boolean;
   item: BatchDraftItem;
   selected: boolean;
   onEdit: (id: string) => void;
@@ -254,11 +263,12 @@ function SelectionCheckbox({
 }
 
 function ItemActions({
+  busy,
   item,
   onEdit,
   onRemove,
   onRetry,
-}: Pick<BatchItemProps, "item" | "onEdit" | "onRemove" | "onRetry">) {
+}: Pick<BatchItemProps, "busy" | "item" | "onEdit" | "onRemove" | "onRetry">) {
   const canEdit = item.status === "ready";
   const canRetry = item.status === "setup_error";
   const canViewDetails = [
@@ -277,6 +287,7 @@ function ItemActions({
     <div className="flex justify-end gap-2">
       {canRetry ? (
         <Button
+          disabled={busy}
           onClick={() => onRetry(item.id)}
           size="sm"
           type="button"
@@ -308,6 +319,7 @@ function ItemActions({
       {canRemove ? (
         <Button
           aria-label={`Remove ${sourceFileName(item)}`}
+          disabled={busy}
           onClick={() => onRemove(item.id)}
           size="icon-sm"
           type="button"

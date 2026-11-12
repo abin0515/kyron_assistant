@@ -22,9 +22,11 @@ const KYRON_ATTACHMENT_CONTENT_TYPES: SourceFileContentType[] = [
 const KYRON_ATTACHMENT_TIMEOUT_MS = 270_000;
 const MD5_BASE64_PATTERN = /^[A-Za-z0-9+/]{22}==$/;
 
+// timeoutMs: the time the caller can spare for the transfer (at most 270 s).
 export async function uploadWorkspaceAttachmentToKyron(
   workspaceId: string,
   userId: string,
+  timeoutMs = KYRON_ATTACHMENT_TIMEOUT_MS,
 ): Promise<string | null> {
   const sourceFile = await getWorkspaceAttachment(workspaceId, userId);
 
@@ -37,7 +39,7 @@ export async function uploadWorkspaceAttachmentToKyron(
   const controller = new AbortController();
   const timeout = setTimeout(
     () => controller.abort(),
-    KYRON_ATTACHMENT_TIMEOUT_MS,
+    Math.min(timeoutMs, KYRON_ATTACHMENT_TIMEOUT_MS),
   );
 
   try {
